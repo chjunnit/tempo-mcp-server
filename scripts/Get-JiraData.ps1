@@ -173,10 +173,16 @@ if ($Action -eq 'GetChangelogs') {
     Dbg "IncludeCurrent: $IncludeCurrent"
 
     # Resolve issues
+    Dbg "Raw IssueKeys array: count=$($IssueKeys.Count), values='$($IssueKeys -join "','")')"
+
     $issues = if ($JQL) {
         Get-IssuesFromJQL -JQL $JQL
     } else {
-        $IssueKeys | ForEach-Object {
+        # Clean and deduplicate issue keys
+        $cleanKeys = @($IssueKeys | Where-Object { $_ -and $_.Trim() } | Select-Object -Unique)
+        Dbg "Cleaned IssueKeys: count=$($cleanKeys.Count), values='$($cleanKeys -join "','")')"
+
+        $cleanKeys | ForEach-Object {
             @{ id = $_; key = $_ }
         }
     }
@@ -188,11 +194,11 @@ if ($Action -eq 'GetChangelogs') {
     Dbg "Resolved $($issues.Count) issues: $(($issues | ForEach-Object { $_.key } | Select-Object -First 5) -join ',')"
     [Console]::Error.WriteLine("[changelog-debug] Processing $($issues.Count) issues")
 
-    # Parse fields and map to changelog field names
-    $fieldList = $Fields -split ','
-    Dbg "Parsed field list: $($fieldList -join ', ')"
+    # Parse fields - keep original IDs and add mapped display names
+    $fieldList = $Fields -split ',' | ForEach-Object { $_.Trim() }
+    Dbg "Parsed field list (IDs): $($fieldList -join ', ')"
 
-    # Map field IDs/names to changelog field names
+    # Map field IDs to changelog field names (Jira uses different names in changelog)
     $fieldMapping = @{
         'customfield_10008' = 'Story Points'
         'status' = 'status'
@@ -201,19 +207,21 @@ if ($Action -eq 'GetChangelogs') {
         'parent' = 'IssueParentAssociation'
     }
 
-    # Build list of changelog field names to match
+    # Build list: include both original field IDs AND mapped names
     $changelogFields = @()
     foreach ($field in $fieldList) {
-        $field = $field.Trim()
+        # Add original field ID (for fieldId matching)
+        $changelogFields += $field
+        # Add mapped name if exists (for field name matching)
         if ($fieldMapping.ContainsKey($field)) {
-            $changelogFields += $fieldMapping[$field]
-        } else {
-            # Use as-is if not in mapping
-            $changelogFields += $field
+            $mappedName = $fieldMapping[$field]
+            if ($mappedName -ne $field) {
+                $changelogFields += $mappedName
+            }
         }
     }
 
-    Dbg "Tracking changelog fields: $($changelogFields -join ', ')"
+    Dbg "Tracking changelog fields (IDs + names): $($changelogFields -join ', ')"
     [Console]::Error.WriteLine("[changelog-debug] Tracking fields: $($changelogFields -join ', ')")
 
     # Fetch changelogs in batches (max 1000 per call)
@@ -234,6 +242,9 @@ if ($Action -eq 'GetChangelogs') {
                 $body.nextPageToken = $nextPageToken
             }
 
+            # Debug: log request body
+            Dbg "Request body issueIdsOrKeys: count=$($body.issueIdsOrKeys.Count), values='$($body.issueIdsOrKeys -join "','")')"
+
             $result = Invoke-ApiCall -Method POST -Url "$jiraBase/rest/api/3/changelog/bulkfetch" -Headers $jiraHeaders -Body $body
 
             # Debug: log API response structure
@@ -250,8 +261,12 @@ if ($Action -eq 'GetChangelogs') {
                     if ($firstHistory.items.Count -gt 0) {
                         $firstItem = $firstHistory.items[0]
                         Dbg "First item: field='$($firstItem.field)', fieldId='$($firstItem.fieldId)', from='$($firstItem.fromString)', to='$($firstItem.toString)'"
+                        $matched = ($changelogFields -contains $firstItem.field) -or ($changelogFields -contains $firstItem.fieldId)
+                        Dbg "  Would match against our filter? $matched"
                     }
                 }
+            } else {
+                Dbg "WARNING: Jira returned 0 issue changelogs - check issueIdsOrKeys in request"
             }
 
             [Console]::Error.WriteLine("[changelog-debug] Received $($result.issueChangeLogs.Count) issue changelogs")
