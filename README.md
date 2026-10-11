@@ -1,10 +1,27 @@
 # Tempo MCP Server
 
-MCP server that wraps the Get-TempoData.ps1 script to fetch Tempo Planner data directly from Claude Desktop.
+MCP server for burn-up tracking with Tempo and Jira. Fetches Tempo plans/worklogs and Jira changelog history.
+
+## Features
+
+### 🎯 Three MCP Tools:
+1. **`get_tempo_data`** - Tempo plans and worklogs for teams/individuals
+2. **`get_jira_changelogs`** - Field change history (Story Points, status, resolution, Fix Version, parent)
+3. **`get_worklog_summary`** - Aggregated worklogs by ISO week and epic
+
+### 📁 Repository Structure
+```
+tempo-mcp-server/
+├── index.js                  # MCP server (Node.js)
+├── scripts/
+│   ├── Get-TempoData.ps1    # Tempo API wrapper
+│   └── Get-JiraData.ps1     # Jira changelog & worklog aggregation
+├── package.json
+└── README.md
+```
 
 ## Installation
 
-1. Install dependencies:
 ```bash
 cd tempo-mcp-server
 npm install
@@ -12,61 +29,104 @@ npm install
 
 ## Configuration
 
-Add this server to your Claude Desktop configuration file:
-
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Add to Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
-    "tempo": {
+    "tempo-planner": {
       "command": "node",
-      "args": [
-        "C:\\Users\\ChristopherJuhl(CHJU\\OneDrive - NNITGroup (Corporate)\\claude\\tempo-mcp-server\\index.js"
-      ],
+      "args": ["C:\\path\\to\\tempo-mcp-server\\index.js"],
       "env": {
-        "TEMPO_API_TOKEN": "your-tempo-api-token-here"
+        "TEMPO_API_TOKEN": "your-tempo-token",
+        "JIRA_API_TOKEN": "your-jira-token",
+        "JIRA_EMAIL": "your-email@company.com",
+        "JIRA_BASE_URL": "https://your-org.atlassian.net"
       }
     }
   }
 }
 ```
 
-**Important:** Replace `your-tempo-api-token-here` with your actual Tempo API token.
+**Restart Claude Desktop** after configuration changes.
 
-## Usage in Claude Desktop
+## Tools
 
-Once configured, you can ask Claude Desktop to fetch Tempo data:
+### 1. get_tempo_data
+Fetches Tempo plans and/or worklogs.
 
-**Example prompts:**
+**Parameters:**
+- `from`, `to` (required): yyyy-MM-dd dates
+- `team_ids`: Array of Tempo team IDs
+- `account_ids`: Array of Atlassian account IDs
+- `data_type`: "Plans", "Worklogs", or "Both"
 
-> "Get Tempo planner data from 2026-10-01 to 2026-12-31 for teams 12 and 15"
+**Example:**
+> "Get Tempo data from 2026-10-01 to 2026-12-31 for team 3"
 
-> "Fetch both plans and worklogs for team 23 and account 712020:abc123 from October to December 2026"
+### 2. get_jira_changelogs
+Fetches field change history for burn-up tracking.
 
-> "Get worklog data for teams 12, 15, 23 and individuals 712020:abc123, 712020:def456 for Q4 2026, then create a roadmap report"
+**Parameters:**
+- `jql` OR `issue_keys`: JQL query or specific issue keys
+- `fields`: Fields to track (default: Story Points, status, resolution, Fix Version, parent)
+- `since`: Optional date filter (yyyy-MM-dd)
+- `include_current`: Include current values (default: true)
 
-Claude will automatically:
-1. Call the `get_tempo_data` tool with your parameters
-2. Run the PowerShell script
-3. Return the CSV data for analysis
-4. Use it with other tools (like Rovo MCP) to create reports
+**Returns:** Two CSV blocks:
+- `changes`: issueKey, changedAt, field, from, to
+- `current`: issueKey, issueType, status, storyPoints, fixVersions, parentKey, etc.
 
-## Tool Parameters
+**Example:**
+> "Get changelog for parent = JOBS-20161 since 2026-10-01"
 
-- `from` (required): Start date in yyyy-MM-dd format
-- `to` (required): End date in yyyy-MM-dd format  
-- `team_ids` (optional): Array of Tempo team IDs (numbers)
-- `account_ids` (optional): Array of Atlassian account IDs (strings)
-- `data_type` (optional): "Plans", "Worklogs", or "Both" (default: "Both")
+### 3. get_worklog_summary
+Aggregates Tempo worklogs by ISO week and epic.
+
+**Parameters:**
+- `jql` (required): JQL query for issues
+- `from`, `to` (required): yyyy-MM-dd dates
+- `group_by`: Dimensions (default: ["week", "epic"])
+
+**Returns:** CSV with weekly summaries + control sum
+
+**Example:**
+> "Get worklog summary for parent = JOBS-20161 from Aug to Oct 2026"
+
+## Features
+
+✅ **Bulk operations** - Efficient Jira bulk changelog endpoint  
+✅ **Rate limiting** - Automatic retry with Retry-After  
+✅ **Large responses** - Files >200KB written to `tempo-exports/`  
+✅ **Error handling** - Clear error messages (not "invalid response")  
+✅ **Incremental updates** - Use `since` parameter for changelog  
 
 ## Troubleshooting
 
-If you get "TEMPO_API_TOKEN not set" errors:
-- Make sure you added the token to the `env` section in claude_desktop_config.json
-- Restart Claude Desktop after updating the config
+**"TEMPO_API_TOKEN not set"** → Add token to config, restart Claude Desktop
 
-If the script fails to run:
-- Verify the path to Get-TempoData.ps1 is correct
-- Ensure PowerShell execution policy allows the script to run
-- Check that your Tempo API token has the required scopes (Plans: View, Worklogs: View, Teams: View)
+**"JIRA_API_TOKEN not set"** → Add Jira credentials to config
+
+**Scripts fail to run** → Check PowerShell execution policy: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+
+**No changelog changes returned** → Field mapping is automatic (customfield_10008 → Story Points, etc.)
+
+## API Requirements
+
+**Tempo token scopes:**
+- Worklogs: View
+- Plans: View  
+- Teams: View
+
+**Jira token:** Generate at https://id.atlassian.com/manage-profile/security/api-tokens
+
+## Development
+
+```bash
+# Test PowerShell scripts directly
+.\scripts\Get-TempoData.ps1 -From 2026-10-01 -To 2026-10-31 -TeamIds 3 -Data Both -PassThru
+
+.\scripts\Get-JiraData.ps1 -Action GetChangelogs -IssueKeys JOBS-22480
+
+.\scripts\Get-JiraData.ps1 -Action GetWorklogSummary -JQL "parent = JOBS-20161" -From 2026-08-01 -To 2026-10-11
+```
