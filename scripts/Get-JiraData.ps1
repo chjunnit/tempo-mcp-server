@@ -157,7 +157,8 @@ function Get-IssuesFromJQL {
     } while ($nextPageToken)
 
     [Console]::Error.WriteLine("[jira-debug] Found $($allIssues.Count) issues")
-    return $allIssues
+    # Return with comma prefix to prevent PS 5.1 from unpacking single-element arrays
+    return ,$allIssues
 }
 
 # ---------- GetChangelogs Action ----------
@@ -181,19 +182,24 @@ if ($Action -eq 'GetChangelogs') {
         $jqlResults = Get-IssuesFromJQL -JQL $JQL
         $keys = @($jqlResults | ForEach-Object { $_.key })
         Dbg "From JQL: $($keys.Count) issue keys"
-        $keys
+        # Return with comma to prevent unpacking
+        ,$keys
     } else {
         # Clean and deduplicate provided issue keys
         $cleanKeys = @($IssueKeys | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() } | Select-Object -Unique)
         Dbg "Cleaned IssueKeys: count=$($cleanKeys.Count), values='$($cleanKeys -join "','")')"
-        $cleanKeys
+        # Return with comma to prevent unpacking
+        ,$cleanKeys
     }
 
     if ($issueKeysOrIds.Count -eq 0) {
         throw "No issues found"
     }
 
-    Dbg "Issue keys/IDs for changelog: count=$($issueKeysOrIds.Count), first 5='$(($issueKeysOrIds | Select-Object -First 5) -join "','")')"
+    # Force to array in case PS 5.1 unpacked it
+    $issueKeysOrIds = @($issueKeysOrIds)
+    Dbg "Issue keys/IDs for changelog (after @()): count=$($issueKeysOrIds.Count), first 5='$(($issueKeysOrIds | Select-Object -First 5) -join "','")')"
+    Dbg "  Type: $($issueKeysOrIds.GetType().FullName)"
     [Console]::Error.WriteLine("[changelog-debug] Processing $($issueKeysOrIds.Count) issues")
 
     # Parse fields - keep original IDs and add mapped display names
@@ -240,11 +246,15 @@ if ($Action -eq 'GetChangelogs') {
         } else {
             $batch = @($issueKeysOrIds[$i..$endIndex])
         }
+        # Cast to ensure it's a string array
+        $batch = [string[]]$batch
+
+        Dbg "Batch slice [$i..$endIndex]: count=$($batch.Count), type=$($batch.GetType().FullName), values='$($batch -join "','")')"
 
         $nextPageToken = $null
         do {
             $body = @{
-                issueIdsOrKeys = $batch
+                issueIdsOrKeys = [string[]]$batch
             }
             if ($nextPageToken) {
                 $body.nextPageToken = $nextPageToken
