@@ -224,8 +224,12 @@ if ($Action -eq 'GetChangelogs') {
 
             # Structure: issueChangeLogs[] → changeHistories[] → items[]
             foreach ($issueLog in $result.issueChangeLogs) {
+                Write-Host "    Issue $($issueLog.issueKey): $($issueLog.changeHistories.Count) change histories"
                 foreach ($history in $issueLog.changeHistories) {
                     foreach ($change in $history.items) {
+                        # Debug: show what fields we're seeing
+                        Write-Host "      Checking field='$($change.field)' fieldId='$($change.fieldId)' against: $($changelogFields -join ', ')"
+
                         # Filter by field - match against changelog field names OR fieldId
                         if ($changelogFields -contains $change.field -or $changelogFields -contains $change.fieldId) {
                             # Convert Unix timestamp (milliseconds) to DateTime
@@ -319,6 +323,7 @@ if ($Action -eq 'GetWorklogSummary') {
     # Resolve issues and map to epics in batch
     Write-Host "Resolving issues and epics..."
     $issueToEpic = @{}
+    $issueIdToKey = @{}
     $issueIds = @()
 
     $nextPageToken = $null
@@ -338,6 +343,9 @@ if ($Action -eq 'GetWorklogSummary') {
             # Convert id to integer for Tempo API
             $issueId = [int]$issue.id
             $issueIds += $issueId
+
+            # Map issue ID to key (Tempo worklogs only have ID, not key)
+            $issueIdToKey[$issueId] = $issue.key
 
             # Get epic key from parent
             $epicKey = if ($issue.fields.parent) {
@@ -361,22 +369,21 @@ if ($Action -eq 'GetWorklogSummary') {
     for ($i = 0; $i -lt $issueIds.Count; $i += $batchSize) {
         $batch = $issueIds[$i..[Math]::Min($i + $batchSize - 1, $issueIds.Count - 1)]
 
-        $offset = 0
-        $limit = 5000
-        do {
-            $body = @{
-                from = $From
-                to = $To
-                issueIds = @($batch)
-                offset = $offset
-                limit = $limit
-            }
+        # Use metadata.next pagination pattern
+        $url = "$TempoBaseUrl/worklogs/search?limit=5000"
+        $body = @{
+            from = $From
+            to = $To
+            issueIds = @($batch)
+        }
 
-            $result = Invoke-ApiCall -Method POST -Url "$TempoBaseUrl/worklogs/search" -Headers $tempoHeaders -Body $body
+        do {
+            $result = Invoke-ApiCall -Method POST -Url $url -Headers $tempoHeaders -Body $body
             $allWorklogs += $result.results
 
-            $offset += $limit
-        } while ($result.results.Count -eq $limit)
+            # Get next page URL from metadata
+            $url = $result.metadata.next
+        } while ($url)
     }
 
     Write-Host "Processing $($allWorklogs.Count) worklogs..."
@@ -401,14 +408,16 @@ if ($Action -eq 'GetWorklogSummary') {
 
         # Build group key
         $keyParts = @()
-        # Convert worklog issue ID to int to match issueToEpic hashtable key type
+        # Convert worklog issue ID to int to match hashtable key types
         $worklogIssueId = [int]$worklog.issue.id
+        # Tempo worklogs only have issue.id, not issue.key - lookup from mapping
+        $worklogIssueKey = $issueIdToKey[$worklogIssueId]
 
         foreach ($dim in $groupDimensions) {
             switch ($dim) {
                 'week' { $keyParts += "$isoYear-W$($isoWeek.ToString('00'))" }
                 'epic' { $keyParts += $issueToEpic[$worklogIssueId] }
-                'issue' { $keyParts += $worklog.issue.key }
+                'issue' { $keyParts += $worklogIssueKey }
                 'author' { $keyParts += $worklog.author.accountId }
             }
         }
@@ -420,7 +429,7 @@ if ($Action -eq 'GetWorklogSummary') {
                 isoWeek = $isoWeek
                 weekStart = $weekStart
                 epicKey = $issueToEpic[$worklogIssueId]
-                issueKey = $worklog.issue.key
+                issueKey = $worklogIssueKey
                 author = $worklog.author.accountId
                 hours = 0
                 worklogCount = 0
