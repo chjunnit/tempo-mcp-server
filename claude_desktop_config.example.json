@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tempo": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\ChristopherJuhl(CHJU\\OneDrive - NNITGroup (Corporate)\\claude\\tempo-mcp-server\\index.js"
+      ],
+      "env": {
+        "TEMPO_API_TOKEN": "YOUR_TEMPO_TOKEN_HERE"
+      }
+    }
+  }
+}
