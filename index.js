@@ -15,8 +15,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Paths to PowerShell scripts
-const TEMPO_SCRIPT_PATH = join(__dirname, '..', 'Report data', 'Get-TempoData.ps1');
-const JIRA_SCRIPT_PATH = join(__dirname, '..', 'Report data', 'Get-JiraData.ps1');
+const TEMPO_SCRIPT_PATH = join(__dirname, 'scripts', 'Get-TempoData.ps1');
+const JIRA_SCRIPT_PATH = join(__dirname, 'scripts', 'Get-JiraData.ps1');
 
 // Export settings
 const EXPORTS_DIR = join(__dirname, '..', 'tempo-exports');
