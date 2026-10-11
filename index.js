@@ -9,6 +9,7 @@ import {
 import { spawn } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -16,6 +17,10 @@ const __dirname = dirname(__filename);
 // Paths to PowerShell scripts
 const TEMPO_SCRIPT_PATH = join(__dirname, '..', 'Report data', 'Get-TempoData.ps1');
 const JIRA_SCRIPT_PATH = join(__dirname, '..', 'Report data', 'Get-JiraData.ps1');
+
+// Export settings
+const EXPORTS_DIR = join(__dirname, '..', 'tempo-exports');
+const MAX_INLINE_SIZE = 200 * 1024; // 200 KB
 
 class TempoMCPServer {
   constructor() {
@@ -223,12 +228,13 @@ class TempoMCPServer {
 
     // Parse CSV data from stdout
     const csvData = this.parseCSVFromOutput(result.output);
+    const response = this.handleLargeResponse(csvData, 'get_tempo_data');
 
     return {
       content: [
         {
           type: 'text',
-          text: `Successfully fetched Tempo data for period ${from} to ${to}.\n\n${csvData}`
+          text: `Successfully fetched Tempo data for period ${from} to ${to}.\n\n${response}`
         }
       ]
     };
@@ -280,12 +286,13 @@ class TempoMCPServer {
 
     // Parse CSV data from stdout
     const csvData = this.parseCSVFromOutput(result.output);
+    const response = this.handleLargeResponse(csvData, 'get_jira_changelogs');
 
     return {
       content: [
         {
           type: 'text',
-          text: `Successfully fetched Jira changelogs.\n\n${csvData}`
+          text: `Successfully fetched Jira changelogs.\n\n${response}`
         }
       ]
     };
@@ -334,12 +341,13 @@ class TempoMCPServer {
 
     // Parse CSV data from stdout
     const csvData = this.parseCSVFromOutput(result.output);
+    const response = this.handleLargeResponse(csvData, 'get_worklog_summary');
 
     return {
       content: [
         {
           type: 'text',
-          text: `Successfully fetched worklog summary for period ${from} to ${to}.\n\n${csvData}`
+          text: `Successfully fetched worklog summary for period ${from} to ${to}.\n\n${response}`
         }
       ]
     };
@@ -374,6 +382,33 @@ class TempoMCPServer {
         resolve({ success: false, error: err.message });
       });
     });
+  }
+
+  handleLargeResponse(csvData, toolName) {
+    const dataSize = Buffer.byteLength(csvData, 'utf8');
+
+    // If under threshold, return inline
+    if (dataSize < MAX_INLINE_SIZE) {
+      return csvData;
+    }
+
+    // Create exports directory if it doesn't exist
+    if (!existsSync(EXPORTS_DIR)) {
+      mkdirSync(EXPORTS_DIR, { recursive: true });
+    }
+
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `${toolName}_${timestamp}.csv`;
+    const filepath = join(EXPORTS_DIR, filename);
+
+    // Write to file
+    writeFileSync(filepath, csvData, 'utf8');
+
+    // Count lines for summary
+    const lineCount = csvData.split('\n').length;
+
+    return `Response written to file due to size (${Math.round(dataSize / 1024)} KB).\n\nFile: ${filepath}\nLines: ${lineCount}`;
   }
 
   parseCSVFromOutput(output) {
