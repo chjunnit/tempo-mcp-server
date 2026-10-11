@@ -202,6 +202,23 @@ if ($Action -eq 'GetChangelogs') {
     Dbg "  Type: $($issueKeysOrIds.GetType().FullName)"
     [Console]::Error.WriteLine("[changelog-debug] Processing $($issueKeysOrIds.Count) issues")
 
+    # Build issueId → issueKey mapping (Jira changelog returns numeric issueId, we need key)
+    Dbg "Building issue ID to key mapping..."
+    $issueIdToKey = @{}
+
+    # Fetch issue details to get both id and key
+    $jqlForMapping = "key in ($($issueKeysOrIds -join ','))"
+    $mappingResult = Invoke-ApiCall -Method POST -Url "$jiraBase/rest/api/3/search/jql" -Headers $jiraHeaders -Body @{
+        jql = $jqlForMapping
+        fields = @('id', 'key')
+        maxResults = 1000
+    }
+
+    foreach ($issue in $mappingResult.issues) {
+        $issueIdToKey[$issue.id] = $issue.key
+    }
+    Dbg "ID→Key mapping: $($issueIdToKey.Count) entries, sample: $(($issueIdToKey.Keys | Select-Object -First 3 | ForEach-Object { "$_ → $($issueIdToKey[$_])" }) -join ', ')"
+
     # Parse fields - keep original IDs and add mapped display names
     $fieldList = $Fields -split ',' | ForEach-Object { $_.Trim() }
     Dbg "Parsed field list (IDs): $($fieldList -join ', ')"
@@ -292,24 +309,28 @@ if ($Action -eq 'GetChangelogs') {
             # Structure: issueChangeLogs[] → changeHistories[] → items[]
             foreach ($issueLog in $result.issueChangeLogs) {
                 $totalHistories = $issueLog.changeHistories.Count
-                [Console]::Error.WriteLine("[changelog-debug] Issue $($issueLog.issueKey): $totalHistories change histories")
+                # Map issueId (numeric) to issueKey (string like JOBS-22480)
+                $issueKey = $issueIdToKey[$issueLog.issueId]
+                [Console]::Error.WriteLine("[changelog-debug] Issue $issueKey (id=$($issueLog.issueId)): $totalHistories change histories")
 
                 foreach ($history in $issueLog.changeHistories) {
                     foreach ($change in $history.items) {
                         # Filter by field - match against changelog field names OR fieldId
                         if ($changelogFields -contains $change.field -or $changelogFields -contains $change.fieldId) {
-                            # Convert Unix timestamp (milliseconds) to DateTime
-                            $changeDate = [DateTimeOffset]::FromUnixTimeMilliseconds($history.created).DateTime
+                            # Convert Unix timestamp (milliseconds) directly to UTC ISO string
+                            # Don't use .DateTime which converts to local time - stay in UTC throughout
+                            $changedAt = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$history.created).ToString('yyyy-MM-ddTHH:mm:ssZ')
 
                             # Filter by since date
                             if ($Since) {
                                 $sinceDate = [datetime]::ParseExact($Since, 'yyyy-MM-dd', $null)
+                                $changeDate = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$history.created).DateTime
                                 if ($changeDate -lt $sinceDate) { continue }
                             }
 
                             $allChanges += [PSCustomObject]@{
-                                issueKey = $issueLog.issueKey
-                                changedAt = $changeDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                                issueKey = $issueKey
+                                changedAt = $changedAt
                                 field = $change.field
                                 from = $change.fromString
                                 to = $change.toString
