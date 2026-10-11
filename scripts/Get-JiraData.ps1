@@ -175,7 +175,9 @@ if ($Action -eq 'GetChangelogs') {
     }
 
     # Parse fields and map to changelog field names
+    Write-Host "Input Fields parameter: '$Fields'"
     $fieldList = $Fields -split ','
+    Write-Host "Parsed field list: $($fieldList -join ', ')"
 
     # Map field IDs/names to changelog field names
     $fieldMapping = @{
@@ -192,9 +194,11 @@ if ($Action -eq 'GetChangelogs') {
         $field = $field.Trim()
         if ($fieldMapping.ContainsKey($field)) {
             $changelogFields += $fieldMapping[$field]
+            Write-Host "  Mapped '$field' -> '$($fieldMapping[$field])'"
         } else {
             # Use as-is if not in mapping
             $changelogFields += $field
+            Write-Host "  Using field as-is: '$field'"
         }
     }
 
