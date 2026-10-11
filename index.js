@@ -134,7 +134,9 @@ class TempoMCPServer {
     }
 
     if (account_ids.length > 0) {
-      psArgs.push('-AccountIds', account_ids.join(','));
+      // Pass each account ID as a separate argument for PowerShell array parameter
+      psArgs.push('-AccountIds');
+      account_ids.forEach(id => psArgs.push(id));
     }
 
     // Execute PowerShell script
