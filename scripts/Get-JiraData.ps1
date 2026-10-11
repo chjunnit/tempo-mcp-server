@@ -91,7 +91,8 @@ function Invoke-ApiCall {
                 UseBasicParsing = $true
             }
             if ($null -ne $Body) {
-                $json = $Body | ConvertTo-Json -Depth 10 -Compress
+                # Use -InputObject to prevent PS 5.1 from unpacking single-element arrays
+                $json = ConvertTo-Json -InputObject $Body -Depth 10 -Compress
                 $params.Body = [Text.Encoding]::UTF8.GetBytes($json)
                 $params.ContentType = 'application/json; charset=utf-8'
             }
@@ -183,7 +184,7 @@ if ($Action -eq 'GetChangelogs') {
         $keys
     } else {
         # Clean and deduplicate provided issue keys
-        $cleanKeys = @($IssueKeys | Where-Object { $_ -and $_.Trim() } | Select-Object -Unique)
+        $cleanKeys = @($IssueKeys | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() } | Select-Object -Unique)
         Dbg "Cleaned IssueKeys: count=$($cleanKeys.Count), values='$($cleanKeys -join "','")')"
         $cleanKeys
     }
@@ -231,7 +232,14 @@ if ($Action -eq 'GetChangelogs') {
     $batchSize = 1000
 
     for ($i = 0; $i -lt $issueKeysOrIds.Count; $i += $batchSize) {
-        $batch = @($issueKeysOrIds[$i..[Math]::Min($i + $batchSize - 1, $issueKeysOrIds.Count - 1)])
+        $endIndex = [Math]::Min($i + $batchSize - 1, $issueKeysOrIds.Count - 1)
+
+        # Force array wrapper - PS 5.1 unpacks single-element range slices to scalar
+        if ($i -eq $endIndex) {
+            $batch = @($issueKeysOrIds[$i])
+        } else {
+            $batch = @($issueKeysOrIds[$i..$endIndex])
+        }
 
         $nextPageToken = $null
         do {

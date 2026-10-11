@@ -98,7 +98,8 @@ function Invoke-Tempo {
                 UseBasicParsing = $true
             }
             if ($null -ne $Body) {
-                $json = $Body | ConvertTo-Json -Depth 10 -Compress
+                # Use -InputObject to prevent PS 5.1 from unpacking single-element arrays
+                $json = ConvertTo-Json -InputObject $Body -Depth 10 -Compress
                 $params.Body        = [Text.Encoding]::UTF8.GetBytes($json)
                 $params.ContentType = 'application/json; charset=utf-8'
             }
@@ -151,7 +152,8 @@ function ConvertTo-Flat {
         }
         elseif ($v -is [array]) {
             if ($v.Count -gt 0 -and $v[0] -is [System.Management.Automation.PSCustomObject]) {
-                $Into[$name] = ($v | ConvertTo-Json -Depth 10 -Compress)
+                # Use -InputObject to prevent PS 5.1 from unpacking single-element arrays
+                $Into[$name] = (ConvertTo-Json -InputObject $v -Depth 10 -Compress)
             } else {
                 $Into[$name] = ($v -join ';')
             }
