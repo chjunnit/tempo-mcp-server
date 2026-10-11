@@ -30,6 +30,10 @@
 
 .PARAMETER GroupBy
     Grouping dimensions for worklog summary. Comma-separated.
+
+.PARAMETER TempoBaseUrl
+    Tempo API base URL. Default https://api.tempo.io/4
+    For EU region, use https://api.eu.tempo.io/4
 #>
 
 [CmdletBinding()]
@@ -42,7 +46,8 @@ param(
     [string]   $IncludeCurrent = 'true',
     [string]   $From,
     [string]   $To,
-    [string]   $GroupBy = 'week,epic'
+    [string]   $GroupBy = 'week,epic',
+    [string]   $TempoBaseUrl = 'https://api.eu.tempo.io/4'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -366,7 +371,7 @@ if ($Action -eq 'GetWorklogSummary') {
                 limit = $limit
             }
 
-            $result = Invoke-ApiCall -Method POST -Url "https://api.tempo.io/4/worklogs/search" -Headers $tempoHeaders -Body $body
+            $result = Invoke-ApiCall -Method POST -Url "$TempoBaseUrl/worklogs/search" -Headers $tempoHeaders -Body $body
             $allWorklogs += $result.results
 
             $offset += $limit

@@ -33,8 +33,8 @@
     Folder for the CSV files (default: current folder).
 
 .PARAMETER BaseUrl
-    Tempo API base URL. Default https://api.tempo.io/4
-    (check with your Tempo admin if your organization uses EU data residency).
+    Tempo API base URL. Default https://api.eu.tempo.io/4
+    For US region, use https://api.tempo.io/4
 
 .EXAMPLE
     $env:TEMPO_API_TOKEN = Read-Host "Tempo token" -AsSecureString |
@@ -53,7 +53,7 @@ param(
     [string]   $AccountIds = '',
     [ValidateSet('Plans', 'Worklogs', 'Both')] [string] $Data = 'Both',
     [string]   $OutDir  = '.',
-    [string]   $BaseUrl = 'https://api.tempo.io/4',
+    [string]   $BaseUrl = 'https://api.eu.tempo.io/4',
     [int]      $PageSize = 1000,
     [switch]   $PassThru
 )
