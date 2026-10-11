@@ -110,7 +110,7 @@ function Invoke-ApiCall {
                 if ($_.Exception.Response.Headers['Retry-After']) {
                     $retryAfter = [int]$_.Exception.Response.Headers['Retry-After']
                 }
-                Write-Host "Rate limited (429) - retrying in $retryAfter seconds..."
+                [Console]::Error.WriteLine("[api-debug] Rate limited (429) - retrying in $retryAfter seconds...")
                 Start-Sleep -Seconds $retryAfter
                 continue
             }
@@ -136,7 +136,7 @@ function Invoke-ApiCall {
 function Get-IssuesFromJQL {
     param([string] $JQL)
 
-    Write-Host "Resolving JQL to issue IDs..."
+    [Console]::Error.WriteLine("[jira-debug] Resolving JQL to issue IDs...")
     $allIssues = @()
     $nextPageToken = $null
 
@@ -155,7 +155,7 @@ function Get-IssuesFromJQL {
         $nextPageToken = $result.nextPageToken
     } while ($nextPageToken)
 
-    Write-Host "Found $($allIssues.Count) issues"
+    [Console]::Error.WriteLine("[jira-debug] Found $($allIssues.Count) issues")
     return $allIssues
 }
 
@@ -174,10 +174,10 @@ if ($Action -eq 'GetChangelogs') {
         throw "No issues found"
     }
 
+    [Console]::Error.WriteLine("[changelog-debug] Processing $($issues.Count) issues")
+
     # Parse fields and map to changelog field names
-    Write-Host "Input Fields parameter: '$Fields'"
     $fieldList = $Fields -split ','
-    Write-Host "Parsed field list: $($fieldList -join ', ')"
 
     # Map field IDs/names to changelog field names
     $fieldMapping = @{
@@ -194,18 +194,16 @@ if ($Action -eq 'GetChangelogs') {
         $field = $field.Trim()
         if ($fieldMapping.ContainsKey($field)) {
             $changelogFields += $fieldMapping[$field]
-            Write-Host "  Mapped '$field' -> '$($fieldMapping[$field])'"
         } else {
             # Use as-is if not in mapping
             $changelogFields += $field
-            Write-Host "  Using field as-is: '$field'"
         }
     }
 
-    Write-Host "Tracking changelog fields: $($changelogFields -join ', ')"
+    [Console]::Error.WriteLine("[changelog-debug] Tracking fields: $($changelogFields -join ', ')")
 
     # Fetch changelogs in batches (max 1000 per call)
-    Write-Host "Fetching changelogs for $($issues.Count) issues..."
+    [Console]::Error.WriteLine("[changelog-debug] Fetching changelogs for $($issues.Count) issues...")
     $allChanges = @()
     $batchSize = 1000
 
@@ -224,16 +222,15 @@ if ($Action -eq 'GetChangelogs') {
 
             $result = Invoke-ApiCall -Method POST -Url "$jiraBase/rest/api/3/changelog/bulkfetch" -Headers $jiraHeaders -Body $body
 
-            Write-Host "  Received $($result.issueChangeLogs.Count) issue changelogs in this batch"
+            [Console]::Error.WriteLine("[changelog-debug] Received $($result.issueChangeLogs.Count) issue changelogs")
 
             # Structure: issueChangeLogs[] → changeHistories[] → items[]
             foreach ($issueLog in $result.issueChangeLogs) {
-                Write-Host "    Issue $($issueLog.issueKey): $($issueLog.changeHistories.Count) change histories"
+                $totalHistories = $issueLog.changeHistories.Count
+                [Console]::Error.WriteLine("[changelog-debug] Issue $($issueLog.issueKey): $totalHistories change histories")
+
                 foreach ($history in $issueLog.changeHistories) {
                     foreach ($change in $history.items) {
-                        # Debug: show what fields we're seeing
-                        Write-Host "      Checking field='$($change.field)' fieldId='$($change.fieldId)' against: $($changelogFields -join ', ')"
-
                         # Filter by field - match against changelog field names OR fieldId
                         if ($changelogFields -contains $change.field -or $changelogFields -contains $change.fieldId) {
                             # Convert Unix timestamp (milliseconds) to DateTime
@@ -261,17 +258,16 @@ if ($Action -eq 'GetChangelogs') {
         } while ($nextPageToken)
     }
 
-    Write-Host "Found $($allChanges.Count) changes after filtering"
-
-    # Debug: show sample of what fields we saw
+    [Console]::Error.WriteLine("[changelog-debug] Found $($allChanges.Count) changes after filtering")
     if ($allChanges.Count -gt 0) {
-        Write-Host "  Sample changes: $($allChanges[0..([Math]::Min(2, $allChanges.Count - 1))] | ForEach-Object { "$($_.issueKey):$($_.field)" } | Select-Object -First 3)"
+        $sample = $allChanges[0..([Math]::Min(2, $allChanges.Count - 1))] | ForEach-Object { "$($_.issueKey):$($_.field):$($_.from)→$($_.to)" }
+        [Console]::Error.WriteLine("[changelog-debug] Sample: $($sample -join ', ')")
     }
 
     # Fetch current values if requested
     $currentValues = @()
     if ($IncludeCurrent -eq 'true') {
-        Write-Host "Fetching current values..."
+        [Console]::Error.WriteLine("[changelog-debug] Fetching current values...")
         $fieldSpec = @('key', 'issuetype', 'status', 'resolution', 'resolutiondate', 'created', 'customfield_10008', 'fixVersions', 'parent')
 
         $nextPageToken = $null
@@ -325,7 +321,7 @@ if ($Action -eq 'GetWorklogSummary') {
     }
 
     # Resolve issues and map to epics in batch
-    Write-Host "Resolving issues and epics..."
+    [Console]::Error.WriteLine("[worklog-debug] Resolving issues and epics...")
     $issueToEpic = @{}
     $issueIdToKey = @{}
     $issueIds = @()
@@ -363,10 +359,10 @@ if ($Action -eq 'GetWorklogSummary') {
         $nextPageToken = $result.nextPageToken
     } while ($nextPageToken)
 
-    Write-Host "Found $($issueIds.Count) issues with their epics"
+    [Console]::Error.WriteLine("[worklog-debug] Found $($issueIds.Count) issues with their epics")
 
     # Fetch worklogs in batches
-    Write-Host "Fetching worklogs from Tempo..."
+    [Console]::Error.WriteLine("[worklog-debug] Fetching worklogs from Tempo...")
     $allWorklogs = @()
     $batchSize = 1000
 
@@ -390,7 +386,7 @@ if ($Action -eq 'GetWorklogSummary') {
         } while ($url)
     }
 
-    Write-Host "Processing $($allWorklogs.Count) worklogs..."
+    [Console]::Error.WriteLine("[worklog-debug] Processing $($allWorklogs.Count) worklogs...")
 
     # Group by dimensions
     $groupDimensions = $GroupBy -split ','
@@ -480,4 +476,4 @@ if ($Action -eq 'GetWorklogSummary') {
     Write-Output "=== END worklog_summary.csv ==="
 }
 
-Write-Host "Done."
+[Console]::Error.WriteLine("[script-debug] Done.")
