@@ -172,27 +172,28 @@ if ($Action -eq 'GetChangelogs') {
     Dbg "Since: $Since"
     Dbg "IncludeCurrent: $IncludeCurrent"
 
-    # Resolve issues
+    # Resolve issue keys/IDs for changelog lookup
     Dbg "Raw IssueKeys array: count=$($IssueKeys.Count), values='$($IssueKeys -join "','")')"
 
-    $issues = if ($JQL) {
-        Get-IssuesFromJQL -JQL $JQL
+    $issueKeysOrIds = if ($JQL) {
+        # Get issue keys from JQL search
+        $jqlResults = Get-IssuesFromJQL -JQL $JQL
+        $keys = @($jqlResults | ForEach-Object { $_.key })
+        Dbg "From JQL: $($keys.Count) issue keys"
+        $keys
     } else {
-        # Clean and deduplicate issue keys
+        # Clean and deduplicate provided issue keys
         $cleanKeys = @($IssueKeys | Where-Object { $_ -and $_.Trim() } | Select-Object -Unique)
         Dbg "Cleaned IssueKeys: count=$($cleanKeys.Count), values='$($cleanKeys -join "','")')"
-
-        $cleanKeys | ForEach-Object {
-            @{ id = $_; key = $_ }
-        }
+        $cleanKeys
     }
 
-    if ($issues.Count -eq 0) {
+    if ($issueKeysOrIds.Count -eq 0) {
         throw "No issues found"
     }
 
-    Dbg "Resolved $($issues.Count) issues: $(($issues | ForEach-Object { $_.key } | Select-Object -First 5) -join ',')"
-    [Console]::Error.WriteLine("[changelog-debug] Processing $($issues.Count) issues")
+    Dbg "Issue keys/IDs for changelog: count=$($issueKeysOrIds.Count), first 5='$(($issueKeysOrIds | Select-Object -First 5) -join "','")')"
+    [Console]::Error.WriteLine("[changelog-debug] Processing $($issueKeysOrIds.Count) issues")
 
     # Parse fields - keep original IDs and add mapped display names
     $fieldList = $Fields -split ',' | ForEach-Object { $_.Trim() }
@@ -225,18 +226,17 @@ if ($Action -eq 'GetChangelogs') {
     [Console]::Error.WriteLine("[changelog-debug] Tracking fields: $($changelogFields -join ', ')")
 
     # Fetch changelogs in batches (max 1000 per call)
-    [Console]::Error.WriteLine("[changelog-debug] Fetching changelogs for $($issues.Count) issues...")
+    [Console]::Error.WriteLine("[changelog-debug] Fetching changelogs for $($issueKeysOrIds.Count) issues...")
     $allChanges = @()
     $batchSize = 1000
 
-    for ($i = 0; $i -lt $issues.Count; $i += $batchSize) {
-        $batch = $issues[$i..[Math]::Min($i + $batchSize - 1, $issues.Count - 1)]
-        $issueIds = $batch | ForEach-Object { $_.id }
+    for ($i = 0; $i -lt $issueKeysOrIds.Count; $i += $batchSize) {
+        $batch = @($issueKeysOrIds[$i..[Math]::Min($i + $batchSize - 1, $issueKeysOrIds.Count - 1)])
 
         $nextPageToken = $null
         do {
             $body = @{
-                issueIdsOrKeys = @($issueIds)
+                issueIdsOrKeys = $batch
             }
             if ($nextPageToken) {
                 $body.nextPageToken = $nextPageToken
@@ -327,7 +327,7 @@ if ($Action -eq 'GetChangelogs') {
         $nextPageToken = $null
         do {
             $body = @{
-                jql = "key in ($($issues.key -join ','))"
+                jql = "key in ($($issueKeysOrIds -join ','))"
                 fields = $fieldSpec
                 maxResults = 1000
             }

@@ -130,7 +130,7 @@ function Get-AllPages {
     $next = $Url
     while ($next) {
         $page = Invoke-Tempo -Method $Method -Url $next -Body $Body
-        if ($page.results) { foreach ($r in $page.results) { $all.Add($r) } }
+        if ($page.results) { foreach ($r in $page.results) { [void]$all.Add($r) } }
         $next = $null
         if ($page.metadata -and $page.metadata.next) { $next = $page.metadata.next }
     }
@@ -166,7 +166,7 @@ $teamOf = @{}   # accountId -> list of team names/ids
 
 function Add-TeamTag([string] $accountId, [string] $tag) {
     if (-not $teamOf.ContainsKey($accountId)) { $teamOf[$accountId] = New-Object System.Collections.Generic.List[string] }
-    if (-not $teamOf[$accountId].Contains($tag)) { $teamOf[$accountId].Add($tag) }
+    if (-not $teamOf[$accountId].Contains($tag)) { [void]$teamOf[$accountId].Add($tag) }
 }
 
 $people = New-Object System.Collections.Generic.HashSet[string]
@@ -218,7 +218,7 @@ function Export-Rows($rows, [string] $accountField, [string] $file, [hashtable] 
 
     # Union of all columns, so rows with extra fields don't lose data
     $cols = New-Object System.Collections.Generic.List[string]
-    foreach ($row in $flat) { foreach ($n in $row.PSObject.Properties.Name) { if (-not $cols.Contains($n)) { $cols.Add($n) } } }
+    foreach ($row in $flat) { foreach ($n in $row.PSObject.Properties.Name) { if (-not $cols.Contains($n)) { [void]$cols.Add($n) } } }
 
     if ($PassThru) {
         # Output to stdout for MCP server consumption
@@ -249,7 +249,7 @@ function Get-TempoDataForUsers {
     foreach ($acc in $peopleList) {
         $url = "$BaseUrl/$Endpoint/user/$acc`?from=$From&to=$To&limit=$PageSize"
         foreach ($item in (Get-AllPages -Method GET -Url $url)) {
-            $results.Add($item)
+            [void]$results.Add($item)
         }
     }
 
