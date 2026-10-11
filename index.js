@@ -173,7 +173,17 @@ class TempoMCPServer {
       } catch (error) {
         console.error(`[${toolName}] Error:`, error.message);
         console.error(`[${toolName}] Stack:`, error.stack);
-        throw error;
+
+        // Return error as a normal response instead of throwing
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `ERROR: ${error.message}\n\nTool: ${toolName}\n\nThis is an error response, not a tool failure.`
+            }
+          ],
+          isError: true
+        };
       }
     });
   }
@@ -214,9 +224,8 @@ class TempoMCPServer {
     }
 
     if (account_ids.length > 0) {
-      // Pass each account ID as a separate argument for PowerShell array parameter
-      psArgs.push('-AccountIds');
-      account_ids.forEach(id => psArgs.push(id));
+      // Pass account IDs as comma-separated string - PowerShell will parse as array
+      psArgs.push('-AccountIds', account_ids.join(','));
     }
 
     // Execute PowerShell script
