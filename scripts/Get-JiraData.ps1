@@ -415,7 +415,7 @@ if ($Action -eq 'GetWorklogSummary') {
         $groupKey = $keyParts -join '|'
 
         if (-not $grouped.ContainsKey($groupKey)) {
-            $grouped[$groupKey] = @{
+            $grouped[$groupKey] = [PSCustomObject]@{
                 isoYear = $isoYear
                 isoWeek = $isoWeek
                 weekStart = $weekStart
