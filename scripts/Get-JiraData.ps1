@@ -161,6 +161,17 @@ function Get-IssuesFromJQL {
 
 # ---------- GetChangelogs Action ----------
 if ($Action -eq 'GetChangelogs') {
+    # Debug logging to file
+    $dbgFile = Join-Path $PSScriptRoot "changelog-debug.log"
+    function Dbg($m) { Add-Content $dbgFile "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $m" }
+
+    Dbg "=== START GetChangelogs ==="
+    Dbg "JQL: $JQL"
+    Dbg "IssueKeys: $($IssueKeys -join ',')"
+    Dbg "Fields: $Fields"
+    Dbg "Since: $Since"
+    Dbg "IncludeCurrent: $IncludeCurrent"
+
     # Resolve issues
     $issues = if ($JQL) {
         Get-IssuesFromJQL -JQL $JQL
@@ -174,10 +185,12 @@ if ($Action -eq 'GetChangelogs') {
         throw "No issues found"
     }
 
+    Dbg "Resolved $($issues.Count) issues: $($issues | ForEach-Object { $_.key } | Select-Object -First 5 | Join-String -Separator ',')"
     [Console]::Error.WriteLine("[changelog-debug] Processing $($issues.Count) issues")
 
     # Parse fields and map to changelog field names
     $fieldList = $Fields -split ','
+    Dbg "Parsed field list: $($fieldList -join ', ')"
 
     # Map field IDs/names to changelog field names
     $fieldMapping = @{
@@ -200,6 +213,7 @@ if ($Action -eq 'GetChangelogs') {
         }
     }
 
+    Dbg "Tracking changelog fields: $($changelogFields -join ', ')"
     [Console]::Error.WriteLine("[changelog-debug] Tracking fields: $($changelogFields -join ', ')")
 
     # Fetch changelogs in batches (max 1000 per call)
@@ -221,6 +235,24 @@ if ($Action -eq 'GetChangelogs') {
             }
 
             $result = Invoke-ApiCall -Method POST -Url "$jiraBase/rest/api/3/changelog/bulkfetch" -Headers $jiraHeaders -Body $body
+
+            # Debug: log API response structure
+            $responseKeys = ($result | Get-Member -MemberType NoteProperty).Name -join ', '
+            Dbg "API response keys: $responseKeys"
+            Dbg "issueChangeLogs count: $($result.issueChangeLogs.Count)"
+
+            if ($result.issueChangeLogs.Count -gt 0) {
+                $firstIssue = $result.issueChangeLogs[0]
+                Dbg "First issue: $($firstIssue.issueKey), changeHistories: $($firstIssue.changeHistories.Count)"
+                if ($firstIssue.changeHistories.Count -gt 0) {
+                    $firstHistory = $firstIssue.changeHistories[0]
+                    Dbg "First history created: $($firstHistory.created), items: $($firstHistory.items.Count)"
+                    if ($firstHistory.items.Count -gt 0) {
+                        $firstItem = $firstHistory.items[0]
+                        Dbg "First item: field='$($firstItem.field)', fieldId='$($firstItem.fieldId)', from='$($firstItem.fromString)', to='$($firstItem.toString)'"
+                    }
+                }
+            }
 
             [Console]::Error.WriteLine("[changelog-debug] Received $($result.issueChangeLogs.Count) issue changelogs")
 
@@ -258,6 +290,12 @@ if ($Action -eq 'GetChangelogs') {
         } while ($nextPageToken)
     }
 
+    Dbg "Total changes after filtering: $($allChanges.Count)"
+    if ($allChanges.Count -gt 0) {
+        $sample = $allChanges[0..([Math]::Min(2, $allChanges.Count - 1))] | ForEach-Object { "$($_.issueKey):$($_.field):$($_.from)→$($_.to)" }
+        Dbg "Sample changes: $($sample -join ', ')"
+    }
+
     [Console]::Error.WriteLine("[changelog-debug] Found $($allChanges.Count) changes after filtering")
     if ($allChanges.Count -gt 0) {
         $sample = $allChanges[0..([Math]::Min(2, $allChanges.Count - 1))] | ForEach-Object { "$($_.issueKey):$($_.field):$($_.from)→$($_.to)" }
@@ -267,6 +305,7 @@ if ($Action -eq 'GetChangelogs') {
     # Fetch current values if requested
     $currentValues = @()
     if ($IncludeCurrent -eq 'true') {
+        Dbg "Fetching current values..."
         [Console]::Error.WriteLine("[changelog-debug] Fetching current values...")
         $fieldSpec = @('key', 'issuetype', 'status', 'resolution', 'resolutiondate', 'created', 'customfield_10008', 'fixVersions', 'parent')
 
@@ -303,6 +342,8 @@ if ($Action -eq 'GetChangelogs') {
     }
 
     # Output CSV sections
+    Dbg "Writing output: changes=$($allChanges.Count) rows, current=$($currentValues.Count) rows"
+
     Write-Output "=== BEGIN changes.csv ==="
     $allChanges | ConvertTo-Csv -NoTypeInformation | Write-Output
     Write-Output "=== END changes.csv ==="
@@ -312,6 +353,8 @@ if ($Action -eq 'GetChangelogs') {
         $currentValues | ConvertTo-Csv -NoTypeInformation | Write-Output
         Write-Output "=== END current.csv ==="
     }
+
+    Dbg "=== END GetChangelogs ==="
 }
 
 # ---------- GetWorklogSummary Action ----------
