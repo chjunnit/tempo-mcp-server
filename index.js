@@ -13,8 +13,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Path to the PowerShell script
-const SCRIPT_PATH = join(__dirname, '..', 'Report data', 'Get-TempoData.ps1');
+// Paths to PowerShell scripts
+const TEMPO_SCRIPT_PATH = join(__dirname, '..', 'Report data', 'Get-TempoData.ps1');
+const JIRA_SCRIPT_PATH = join(__dirname, '..', 'Report data', 'Get-JiraData.ps1');
 
 class TempoMCPServer {
   constructor() {
@@ -79,20 +80,94 @@ class TempoMCPServer {
             },
             required: ['from', 'to']
           }
+        },
+        {
+          name: 'get_jira_changelogs',
+          description: 'Fetches field change history for Jira issues using bulk changelog endpoint. Returns CSV with change history and current values for burn-up tracking.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              jql: {
+                type: 'string',
+                description: 'JQL query to find issues (e.g., "parent in (JOBS-20161, JOBS-21640)"). Either jql or issue_keys must be provided.'
+              },
+              issue_keys: {
+                type: 'array',
+                description: 'Array of issue keys (e.g., ["JOBS-22480", "JOBS-22481"]). Either jql or issue_keys must be provided.',
+                items: { type: 'string' }
+              },
+              fields: {
+                type: 'array',
+                description: 'Fields to track changes for. Defaults to ["customfield_10008", "status", "resolution", "fixVersions", "parent"].',
+                items: { type: 'string' },
+                default: ['customfield_10008', 'status', 'resolution', 'fixVersions', 'parent']
+              },
+              since: {
+                type: 'string',
+                description: 'Only return changes on or after this date (yyyy-MM-dd format). For incremental updates.',
+                pattern: '^\\d{4}-\\d{2}-\\d{2}$'
+              },
+              include_current: {
+                type: 'boolean',
+                description: 'Include current field values for each issue. Defaults to true.',
+                default: true
+              }
+            }
+          }
+        },
+        {
+          name: 'get_worklog_summary',
+          description: 'Aggregates Tempo worklogs by ISO week and epic for burn-up tracking. Returns CSV with weekly hour summaries and control sum.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              jql: {
+                type: 'string',
+                description: 'JQL query to find issues (e.g., "parent in (JOBS-20161, JOBS-21640)")',
+              },
+              from: {
+                type: 'string',
+                description: 'Start date in yyyy-MM-dd format',
+                pattern: '^\\d{4}-\\d{2}-\\d{2}$'
+              },
+              to: {
+                type: 'string',
+                description: 'End date in yyyy-MM-dd format',
+                pattern: '^\\d{4}-\\d{2}-\\d{2}$'
+              },
+              group_by: {
+                type: 'array',
+                description: 'Group results by these dimensions. Defaults to ["week", "epic"].',
+                items: {
+                  type: 'string',
+                  enum: ['week', 'epic', 'issue', 'author']
+                },
+                default: ['week', 'epic']
+              }
+            },
+            required: ['jql', 'from', 'to']
+          }
         }
       ]
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      if (request.params.name !== 'get_tempo_data') {
-        throw new Error(`Unknown tool: ${request.params.name}`);
-      }
+      const toolName = request.params.name;
 
       try {
-        return await this.handleGetTempoData(request.params.arguments);
+        switch (toolName) {
+          case 'get_tempo_data':
+            return await this.handleGetTempoData(request.params.arguments);
+          case 'get_jira_changelogs':
+            return await this.handleGetJiraChangelogs(request.params.arguments);
+          case 'get_worklog_summary':
+            return await this.handleGetWorklogSummary(request.params.arguments);
+          default:
+            throw new Error(`Unknown tool: ${toolName}`);
+        }
       } catch (error) {
-        console.error('[get_tempo_data] Error:', error.message);
-        console.error('[get_tempo_data] Stack:', error.stack);
+        console.error(`[${toolName}] Error:`, error.message);
+        console.error(`[${toolName}] Stack:`, error.stack);
         throw error;
       }
     });
@@ -122,7 +197,7 @@ class TempoMCPServer {
     const psArgs = [
       '-NoProfile',
       '-ExecutionPolicy', 'Bypass',
-      '-File', SCRIPT_PATH,
+      '-File', TEMPO_SCRIPT_PATH,
       '-From', from,
       '-To', to,
       '-Data', data_type,
@@ -154,6 +229,117 @@ class TempoMCPServer {
         {
           type: 'text',
           text: `Successfully fetched Tempo data for period ${from} to ${to}.\n\n${csvData}`
+        }
+      ]
+    };
+  }
+
+  async handleGetJiraChangelogs(args) {
+    const { jql, issue_keys, fields = ['customfield_10008', 'status', 'resolution', 'fixVersions', 'parent'], since, include_current = true } = args;
+
+    // Log parameters for debugging
+    console.error('[get_jira_changelogs] Called with:', JSON.stringify({ jql: jql ? '(jql provided)' : undefined, issue_keys, fields, since, include_current }));
+
+    // Validate: must have either jql or issue_keys
+    if (!jql && (!issue_keys || issue_keys.length === 0)) {
+      throw new Error('Either jql or issue_keys must be provided');
+    }
+
+    // Check if JIRA credentials are set
+    if (!process.env.JIRA_API_TOKEN || !process.env.JIRA_EMAIL) {
+      throw new Error('JIRA_API_TOKEN and JIRA_EMAIL environment variables must be set. Please configure them in your MCP settings.');
+    }
+
+    // Build PowerShell command
+    const psArgs = [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', JIRA_SCRIPT_PATH,
+      '-Action', 'GetChangelogs',
+      '-Fields', fields.join(','),
+      '-IncludeCurrent', include_current.toString()
+    ];
+
+    if (jql) {
+      psArgs.push('-JQL', jql);
+    } else {
+      psArgs.push('-IssueKeys');
+      issue_keys.forEach(key => psArgs.push(key));
+    }
+
+    if (since) {
+      psArgs.push('-Since', since);
+    }
+
+    // Execute PowerShell script
+    const result = await this.executePowerShell(psArgs);
+
+    if (!result.success) {
+      throw new Error(`Failed to fetch Jira changelogs: ${result.error}`);
+    }
+
+    // Parse CSV data from stdout
+    const csvData = this.parseCSVFromOutput(result.output);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully fetched Jira changelogs.\n\n${csvData}`
+        }
+      ]
+    };
+  }
+
+  async handleGetWorklogSummary(args) {
+    const { jql, from, to, group_by = ['week', 'epic'] } = args;
+
+    // Log parameters for debugging
+    console.error('[get_worklog_summary] Called with:', JSON.stringify({ jql: '(jql provided)', from, to, group_by }));
+
+    // Validate required parameters
+    if (!jql) {
+      throw new Error('jql parameter is required');
+    }
+    if (!from || !to) {
+      throw new Error('from and to dates are required');
+    }
+
+    // Check if credentials are set
+    if (!process.env.TEMPO_API_TOKEN) {
+      throw new Error('TEMPO_API_TOKEN environment variable is not set. Please configure it in your MCP settings.');
+    }
+    if (!process.env.JIRA_API_TOKEN || !process.env.JIRA_EMAIL) {
+      throw new Error('JIRA_API_TOKEN and JIRA_EMAIL environment variables must be set. Please configure them in your MCP settings.');
+    }
+
+    // Build PowerShell command
+    const psArgs = [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', JIRA_SCRIPT_PATH,
+      '-Action', 'GetWorklogSummary',
+      '-JQL', jql,
+      '-From', from,
+      '-To', to,
+      '-GroupBy', group_by.join(',')
+    ];
+
+    // Execute PowerShell script
+    const result = await this.executePowerShell(psArgs);
+
+    if (!result.success) {
+      throw new Error(`Failed to fetch worklog summary: ${result.error}`);
+    }
+
+    // Parse CSV data from stdout
+    const csvData = this.parseCSVFromOutput(result.output);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully fetched worklog summary for period ${from} to ${to}.\n\n${csvData}`
         }
       ]
     };
