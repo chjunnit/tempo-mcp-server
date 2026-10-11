@@ -228,7 +228,8 @@ if ($Action -eq 'GetChangelogs') {
                     foreach ($change in $history.items) {
                         # Filter by field - match against changelog field names OR fieldId
                         if ($changelogFields -contains $change.field -or $changelogFields -contains $change.fieldId) {
-                            $changeDate = [datetime]::Parse($history.created)
+                            # Convert Unix timestamp (milliseconds) to DateTime
+                            $changeDate = [DateTimeOffset]::FromUnixTimeMilliseconds($history.created).DateTime
 
                             # Filter by since date
                             if ($Since) {
@@ -400,10 +401,13 @@ if ($Action -eq 'GetWorklogSummary') {
 
         # Build group key
         $keyParts = @()
+        # Convert worklog issue ID to int to match issueToEpic hashtable key type
+        $worklogIssueId = [int]$worklog.issue.id
+
         foreach ($dim in $groupDimensions) {
             switch ($dim) {
                 'week' { $keyParts += "$isoYear-W$($isoWeek.ToString('00'))" }
-                'epic' { $keyParts += $issueToEpic[$worklog.issue.id] }
+                'epic' { $keyParts += $issueToEpic[$worklogIssueId] }
                 'issue' { $keyParts += $worklog.issue.key }
                 'author' { $keyParts += $worklog.author.accountId }
             }
@@ -415,7 +419,7 @@ if ($Action -eq 'GetWorklogSummary') {
                 isoYear = $isoYear
                 isoWeek = $isoWeek
                 weekStart = $weekStart
-                epicKey = $issueToEpic[$worklog.issue.id]
+                epicKey = $issueToEpic[$worklogIssueId]
                 issueKey = $worklog.issue.key
                 author = $worklog.author.accountId
                 hours = 0
