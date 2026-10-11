@@ -215,10 +215,13 @@ if ($Action -eq 'GetChangelogs') {
 
             $result = Invoke-ApiCall -Method POST -Url "$jiraBase/rest/api/3/changelog/bulkfetch" -Headers $jiraHeaders -Body $body
 
-            foreach ($item in $result.values) {
-                foreach ($history in $item.histories) {
+            Write-Host "  Received $($result.issueChangeLogs.Count) issue changelogs in this batch"
+
+            # Structure: issueChangeLogs[] → changeHistories[] → items[]
+            foreach ($issueLog in $result.issueChangeLogs) {
+                foreach ($history in $issueLog.changeHistories) {
                     foreach ($change in $history.items) {
-                        # Filter by field - match against changelog field names
+                        # Filter by field - match against changelog field names OR fieldId
                         if ($changelogFields -contains $change.field -or $changelogFields -contains $change.fieldId) {
                             $changeDate = [datetime]::Parse($history.created)
 
@@ -229,7 +232,7 @@ if ($Action -eq 'GetChangelogs') {
                             }
 
                             $allChanges += [PSCustomObject]@{
-                                issueKey = $item.issueKey
+                                issueKey = $issueLog.issueKey
                                 changedAt = $changeDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
                                 field = $change.field
                                 from = $change.fromString
@@ -244,7 +247,12 @@ if ($Action -eq 'GetChangelogs') {
         } while ($nextPageToken)
     }
 
-    Write-Host "Found $($allChanges.Count) changes"
+    Write-Host "Found $($allChanges.Count) changes after filtering"
+
+    # Debug: show sample of what fields we saw
+    if ($allChanges.Count -gt 0) {
+        Write-Host "  Sample changes: $($allChanges[0..([Math]::Min(2, $allChanges.Count - 1))] | ForEach-Object { "$($_.issueKey):$($_.field)" } | Select-Object -First 3)"
+    }
 
     # Fetch current values if requested
     $currentValues = @()
@@ -321,7 +329,9 @@ if ($Action -eq 'GetWorklogSummary') {
         $result = Invoke-ApiCall -Method POST -Url "$jiraBase/rest/api/3/search/jql" -Headers $jiraHeaders -Body $body
 
         foreach ($issue in $result.issues) {
-            $issueIds += $issue.id
+            # Convert id to integer for Tempo API
+            $issueId = [int]$issue.id
+            $issueIds += $issueId
 
             # Get epic key from parent
             $epicKey = if ($issue.fields.parent) {
@@ -329,7 +339,7 @@ if ($Action -eq 'GetWorklogSummary') {
             } else {
                 $issue.key  # Issue is its own epic
             }
-            $issueToEpic[$issue.id] = $epicKey
+            $issueToEpic[$issueId] = $epicKey
         }
 
         $nextPageToken = $result.nextPageToken
@@ -435,9 +445,14 @@ if ($Action -eq 'GetWorklogSummary') {
 
     $summary | Select-Object -Property $headers | ConvertTo-Csv -NoTypeInformation | Write-Output
 
-    # Control sum
-    $totalHours = ($summary | Measure-Object -Property hours -Sum).Sum
-    $totalCount = ($summary | Measure-Object -Property worklogCount -Sum).Sum
+    # Control sum - handle empty results
+    if ($summary) {
+        $totalHours = ($summary | Measure-Object -Property hours -Sum).Sum
+        $totalCount = ($summary | Measure-Object -Property worklogCount -Sum).Sum
+    } else {
+        $totalHours = 0
+        $totalCount = 0
+    }
     Write-Output "TOTAL,$totalHours,$totalCount"
 
     Write-Output "=== END worklog_summary.csv ==="
