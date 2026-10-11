@@ -185,7 +185,7 @@ if ($Action -eq 'GetChangelogs') {
         throw "No issues found"
     }
 
-    Dbg "Resolved $($issues.Count) issues: $($issues | ForEach-Object { $_.key } | Select-Object -First 5 | Join-String -Separator ',')"
+    Dbg "Resolved $($issues.Count) issues: $(($issues | ForEach-Object { $_.key } | Select-Object -First 5) -join ',')"
     [Console]::Error.WriteLine("[changelog-debug] Processing $($issues.Count) issues")
 
     # Parse fields and map to changelog field names
