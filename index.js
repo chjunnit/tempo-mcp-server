@@ -17,6 +17,7 @@ const __dirname = dirname(__filename);
 // Paths to PowerShell scripts
 const TEMPO_SCRIPT_PATH = join(__dirname, 'scripts', 'Get-TempoData.ps1');
 const JIRA_SCRIPT_PATH = join(__dirname, 'scripts', 'Get-JiraData.ps1');
+const COPY_PLANS_SCRIPT_PATH = join(__dirname, 'scripts', 'Copy-TempoPlans.ps1');
 
 // Export settings
 const EXPORTS_DIR = join(__dirname, '..', 'tempo-exports');
@@ -152,6 +153,65 @@ class TempoMCPServer {
             },
             required: ['jql', 'from', 'to']
           }
+        },
+        {
+          name: 'copy_tempo_plans',
+          description: 'Copy Tempo Planner allocations from one person to others. Supports dry-run preview and actual write with conflict handling (add/keep/replace existing plans).',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              source_account_id: {
+                type: 'string',
+                description: 'Atlassian account ID to copy plans from'
+              },
+              target_team_id: {
+                type: 'string',
+                description: 'Optional: Tempo team ID - copies to all team members'
+              },
+              target_account_ids: {
+                type: 'array',
+                description: 'Optional: Array of specific account IDs to copy to',
+                items: { type: 'string' }
+              },
+              from: {
+                type: 'string',
+                description: 'Start date (yyyy-MM-dd)',
+                pattern: '^\\d{4}-\\d{2}-\\d{2}$'
+              },
+              to: {
+                type: 'string',
+                description: 'End date (yyyy-MM-dd)',
+                pattern: '^\\d{4}-\\d{2}-\\d{2}$'
+              },
+              project_ids: {
+                type: 'array',
+                description: 'Optional: Only copy plans for these project IDs',
+                items: { type: 'number' }
+              },
+              conflict_mode: {
+                type: 'string',
+                description: 'How to handle existing allocations. Add: sum hours, Keep: skip if exists, Replace: overwrite. Default: Add',
+                enum: ['Add', 'Keep', 'Replace'],
+                default: 'Add'
+              },
+              skip_holidays: {
+                type: 'boolean',
+                description: 'Skip days where target has vacation/holiday. Default: true',
+                default: true
+              },
+              max_weekly_hours: {
+                type: 'number',
+                description: 'Warn if weekly total exceeds this. Default: 40',
+                default: 40
+              },
+              dry_run: {
+                type: 'boolean',
+                description: 'If true (default), returns preview without writing. Set false to actually write plans.',
+                default: true
+              }
+            },
+            required: ['source_account_id', 'from', 'to']
+          }
         }
       ]
     }));
@@ -167,6 +227,8 @@ class TempoMCPServer {
             return await this.handleGetJiraChangelogs(request.params.arguments);
           case 'get_worklog_summary':
             return await this.handleGetWorklogSummary(request.params.arguments);
+          case 'copy_tempo_plans':
+            return await this.handleCopyTempoPlans(request.params.arguments);
           default:
             throw new Error(`Unknown tool: ${toolName}`);
         }
@@ -357,6 +419,170 @@ class TempoMCPServer {
         {
           type: 'text',
           text: `Successfully fetched worklog summary for period ${from} to ${to}.\n\n${response}`
+        }
+      ]
+    };
+  }
+
+  async handleCopyTempoPlans(args) {
+    const {
+      source_account_id,
+      target_team_id,
+      target_account_ids = [],
+      from,
+      to,
+      project_ids = [],
+      conflict_mode = 'Add',
+      skip_holidays = true,
+      max_weekly_hours = 40,
+      dry_run = true
+    } = args;
+
+    // Log parameters for debugging
+    console.error('[copy_tempo_plans] Called with:', JSON.stringify({
+      source_account_id,
+      target_team_id: target_team_id || '(none)',
+      target_count: target_account_ids.length,
+      from,
+      to,
+      project_count: project_ids.length,
+      conflict_mode,
+      dry_run
+    }));
+
+    // Validate required parameters
+    if (!source_account_id || !from || !to) {
+      throw new Error('source_account_id, from, and to dates are required');
+    }
+
+    if (!target_team_id && target_account_ids.length === 0) {
+      throw new Error('Either target_team_id or target_account_ids must be provided');
+    }
+
+    // Check if TEMPO_API_TOKEN is set
+    if (!process.env.TEMPO_API_TOKEN) {
+      throw new Error('TEMPO_API_TOKEN environment variable is not set. Please configure it in your MCP settings.');
+    }
+
+    // Build PowerShell command
+    const action = dry_run ? 'Preview' : 'Write';
+    const psArgs = [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', COPY_PLANS_SCRIPT_PATH,
+      '-Action', action,
+      '-SourceAccountId', source_account_id,
+      '-From', from,
+      '-To', to,
+      '-ConflictMode', conflict_mode,
+      '-SkipHolidays', skip_holidays ? '$true' : '$false',
+      '-MaxWeeklyHours', max_weekly_hours.toString()
+    ];
+
+    if (target_team_id) {
+      psArgs.push('-TargetTeamId', target_team_id);
+    }
+
+    if (target_account_ids.length > 0) {
+      psArgs.push('-TargetAccountIds', target_account_ids.join(','));
+    }
+
+    if (project_ids.length > 0) {
+      psArgs.push('-ProjectIds', project_ids.join(','));
+    }
+
+    // Execute PowerShell script
+    const result = await this.executePowerShell(psArgs);
+
+    if (!result.success) {
+      throw new Error(`Failed to copy Tempo plans: ${result.error}`);
+    }
+
+    // Parse JSON result from stdout
+    const jsonMatch = /=== BEGIN copy_plans_result\.json ===\r?\n([\s\S]*?)\r?\n=== END copy_plans_result\.json ===/g.exec(result.output);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse copy plans result from script output');
+    }
+
+    const copyResult = JSON.parse(jsonMatch[1]);
+
+    // Format human-readable output
+    let text = '';
+
+    if (dry_run) {
+      text += `📋 **Preview: Copy Tempo Plans**\n\n`;
+      text += `**Source:** ${source_account_id} (${from} to ${to})\n`;
+      text += `**Projects:** ${copyResult.source.planCount} plan entries across ${copyResult.source.dateCount} days\n\n`;
+      text += `**Targets:** ${copyResult.targets.length} people\n`;
+      text += `**Mode:** ${conflict_mode}\n\n`;
+
+      if (copyResult.totalConflicts > 0) {
+        text += `⚠️ **${copyResult.totalConflicts} conflicts** (existing allocations)\n`;
+      }
+
+      if (copyResult.totalSkippedHolidays > 0) {
+        text += `🏖️ **${copyResult.totalSkippedHolidays} days skipped** (holidays/vacation)\n`;
+      }
+
+      text += `\n**Total to copy:** ${copyResult.totalHoursCopied} hours (${copyResult.totalEntries} entries)\n\n`;
+
+      // Show per-person summary
+      text += `### Per-person breakdown:\n\n`;
+      for (const target of copyResult.targets) {
+        text += `**${target.accountId}:**\n`;
+        text += `  - ${target.entries.length} entries, ${target.totalHours}h total\n`;
+
+        if (target.conflicts > 0) {
+          text += `  - ⚠️ ${target.conflicts} conflicts\n`;
+        }
+
+        if (target.skippedHolidays > 0) {
+          text += `  - 🏖️ ${target.skippedHolidays} days skipped (holidays)\n`;
+        }
+
+        if (target.warnings.length > 0) {
+          text += `  - ⚠️ Warnings:\n`;
+          for (const warning of target.warnings) {
+            text += `    - ${warning}\n`;
+          }
+        }
+
+        text += `\n`;
+      }
+
+      if (copyResult.warnings.length > 0) {
+        text += `### ⚠️ Warnings:\n`;
+        for (const warning of copyResult.warnings) {
+          text += `- ${warning}\n`;
+        }
+        text += `\n`;
+      }
+
+      text += `\n*This is a preview. To actually write these plans, call again with \`dry_run: false\`*`;
+    } else {
+      text += `✅ **Successfully wrote Tempo plans**\n\n`;
+      text += `**Source:** ${source_account_id} (${from} to ${to})\n`;
+      text += `**Targets:** ${copyResult.targets.length} people\n`;
+      text += `**Written:** ${copyResult.writtenCount} plan entries\n`;
+      text += `**Total hours:** ${copyResult.totalHoursCopied}h\n\n`;
+
+      if (copyResult.warnings.length > 0) {
+        text += `### ⚠️ Warnings:\n`;
+        for (const warning of copyResult.warnings) {
+          text += `- ${warning}\n`;
+        }
+      }
+    }
+
+    // Include raw JSON for programmatic access
+    text += `\n\n---\n<details><summary>Raw JSON result</summary>\n\n\`\`\`json\n${JSON.stringify(copyResult, null, 2)}\n\`\`\`\n</details>`;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: text
         }
       ]
     };
