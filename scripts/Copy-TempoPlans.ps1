@@ -304,9 +304,9 @@ foreach ($targetId in $targetAccounts) {
 
     foreach ($week in $weeklyTotals.Keys) {
         if ($weeklyTotals[$week] -gt $MaxWeeklyHours) {
-            $warning = "Week $week: $($weeklyTotals[$week])h exceeds max $MaxWeeklyHours`h"
+            $warning = "Week ${week}: $($weeklyTotals[$week])h exceeds max $MaxWeeklyHours`h"
             $targetResult.warnings += $warning
-            $warnings += "$targetId - $warning"
+            $warnings += "${targetId} - $warning"
         }
     }
 
@@ -365,7 +365,7 @@ if ($Action -eq 'Write') {
                 $written++
             }
             catch {
-                $err = "Failed to write $($entry.date) for $targetId`: $($_.Exception.Message)"
+                $err = "Failed to write $($entry.date) for ${targetId}: $($_.Exception.Message)"
                 $summary.warnings += $err
                 [Console]::Error.WriteLine("  ERROR: $err")
             }
