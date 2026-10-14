@@ -184,7 +184,7 @@ foreach ($teamId in $TeamIdList) {
         if ($team.name) { $teamName = $team.name }
     } catch { Write-Warning "Could not read name of team $teamId : $($_.Exception.Message)" }
 
-    [Console]::Error.WriteLine "Resolving members of '$teamName'..."
+    [Console]::Error.WriteLine("Resolving members of '$teamName'...")
     $members = Get-AllPages -Method GET -Url "$BaseUrl/team-memberships/team/$teamId`?limit=$PageSize"
 
     foreach ($m in $members) {
@@ -202,7 +202,7 @@ foreach ($teamId in $TeamIdList) {
 
 if ($people.Count -eq 0) { throw "No people found for the given teams/accounts in that time frame." }
 $peopleList = @($people)
-[Console]::Error.WriteLine "Fetching data for $($peopleList.Count) people, $From to $To."
+[Console]::Error.WriteLine("Fetching data for $($peopleList.Count) people, $From to $To.")
 
 function Export-Rows($rows, [string] $accountField, [string] $file, [hashtable] $hoursFrom) {
     $flat = foreach ($r in $rows) {
@@ -216,7 +216,7 @@ function Export-Rows($rows, [string] $accountField, [string] $file, [hashtable] 
         }
         [pscustomobject]$f
     }
-    if (-not $flat) { [Console]::Error.WriteLine "  No rows - nothing to export for $file"; return }
+    if (-not $flat) { [Console]::Error.WriteLine("  No rows - nothing to export for $file"); return }
 
     # Union of all columns, so rows with extra fields don't lose data
     $cols = New-Object System.Collections.Generic.List[string]
@@ -224,7 +224,7 @@ function Export-Rows($rows, [string] $accountField, [string] $file, [hashtable] 
 
     if ($PassThru) {
         # Output to stdout for MCP server consumption
-        [Console]::Error.WriteLine "  Returning $(@($flat).Count) rows"
+        [Console]::Error.WriteLine("  Returning $(@($flat).Count) rows")
         Write-Output "=== BEGIN $file ==="
         $flat | Select-Object -Property $cols | ConvertTo-Csv -NoTypeInformation | Write-Output
         Write-Output "=== END $file ==="
@@ -232,7 +232,7 @@ function Export-Rows($rows, [string] $accountField, [string] $file, [hashtable] 
         # Write to file
         $path = Join-Path $OutDir $file
         $flat | Select-Object -Property $cols | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8
-        [Console]::Error.WriteLine "  Wrote $(@($flat).Count) rows to $path"
+        [Console]::Error.WriteLine("  Wrote $(@($flat).Count) rows to $path")
     }
 }
 
@@ -245,7 +245,7 @@ function Get-TempoDataForUsers {
         [hashtable] $HoursMapping
     )
 
-    [Console]::Error.WriteLine "Fetching $DataType..."
+    [Console]::Error.WriteLine("Fetching $DataType...")
     $results = New-Object System.Collections.Generic.List[object]
 
     foreach ($acc in $peopleList) {
@@ -276,4 +276,4 @@ if ($Data -in 'Worklogs', 'Both') {
     }
 }
 
-[Console]::Error.WriteLine "Done."
+[Console]::Error.WriteLine("Done.")
