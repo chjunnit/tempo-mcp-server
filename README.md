@@ -4,10 +4,11 @@ MCP server for burn-up tracking with Tempo and Jira. Fetches Tempo plans/worklog
 
 ## Features
 
-### 🎯 Three MCP Tools:
+### 🎯 Four MCP Tools:
 1. **`get_tempo_data`** - Tempo plans and worklogs for teams/individuals
 2. **`get_jira_changelogs`** - Field change history (Story Points, status, resolution, Fix Version, parent)
 3. **`get_worklog_summary`** - Aggregated worklogs by ISO week and epic
+4. **`copy_tempo_plans`** - Copy Tempo Planner allocations from one person to others
 
 ### 📁 Repository Structure
 ```
@@ -93,6 +94,34 @@ Aggregates Tempo worklogs by ISO week and epic.
 **Example:**
 > "Get worklog summary for parent = JOBS-20161 from Aug to Oct 2026"
 
+### 4. copy_tempo_plans
+Copies Tempo Planner allocations from one person to others with preview and conflict handling.
+
+**Parameters:**
+- `source_account_id` (required): Account ID to copy from
+- `target_team_id`: Optional - Tempo team ID (copies to all members)
+- `target_account_ids`: Optional - Array of specific account IDs
+- `from`, `to` (required): yyyy-MM-dd dates
+- `project_ids`: Optional - Only copy these project IDs
+- `conflict_mode`: How to handle existing allocations (Add/Keep/Replace, default: Add)
+- `skip_holidays`: Skip vacation/holidays (default: true)
+- `max_weekly_hours`: Warn if weekly total exceeds this (default: 40)
+- `dry_run`: Preview mode without writing (default: true)
+
+**Conflict modes:**
+- **Add**: Sum hours with existing allocations
+- **Keep**: Skip if target already has allocation for that project+date
+- **Replace**: Overwrite existing (requires manual deletion first)
+
+**Returns:** 
+- **Preview (dry_run=true)**: Shows what would be copied with warnings for overbooking
+- **Write (dry_run=false)**: Actually writes plans and returns confirmation
+
+**Example:**
+> "Preview copying AXLD's Q1 2027 plans for project 123 to team 3"
+> 
+> "Copy AXLD's plans from Jan to Mar 2027 to accounts ABCD and WXYZ - add mode"
+
 ## Features
 
 ✅ **Bulk operations** - Efficient Jira bulk changelog endpoint  
@@ -115,8 +144,9 @@ Aggregates Tempo worklogs by ISO week and epic.
 
 **Tempo token scopes:**
 - Worklogs: View
-- Plans: View  
+- Plans: View & Write (for copy_tempo_plans)
 - Teams: View
+- Holidays: View (for skip_holidays feature)
 
 **Jira token:** Generate at https://id.atlassian.com/manage-profile/security/api-tokens
 
@@ -129,4 +159,6 @@ Aggregates Tempo worklogs by ISO week and epic.
 .\scripts\Get-JiraData.ps1 -Action GetChangelogs -IssueKeys JOBS-22480
 
 .\scripts\Get-JiraData.ps1 -Action GetWorklogSummary -JQL "parent = JOBS-20161" -From 2026-08-01 -To 2026-10-11
+
+.\scripts\Copy-TempoPlans.ps1 -Action Preview -SourceAccountId "AXLD" -TargetAccountIds "ABCD,WXYZ" -From 2027-01-01 -To 2027-03-31 -ConflictMode Add
 ```
