@@ -148,6 +148,16 @@ export class TempoApi {
         return allHolidays;
     }
     /**
+     * Get worklogs for a user in a date range
+     */
+    async getWorklogs(accountId, from, to) {
+        const allWorklogs = [];
+        for await (const batch of this.paginate(`/worklogs/user/${accountId}?from=${from}&to=${to}`)) {
+            allWorklogs.push(...batch);
+        }
+        return allWorklogs;
+    }
+    /**
      * Create a new plan
      */
     async createPlan(plan) {

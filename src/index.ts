@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { TempoApi } from './tempo-api.js';
 import { CopyPlansService, CopyPlansArgs, CopyPlansResult } from './tools/copy-plans.js';
+import { GetTempoDataService, GetTempoDataArgs, TempoDataResult } from './tools/get-tempo-data.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,6 +29,7 @@ class TempoMCPServer {
   private server: Server;
   private tempoApi: TempoApi | null = null;
   private copyPlansService: CopyPlansService | null = null;
+  private getTempoDataService: GetTempoDataService | null = null;
 
   constructor() {
     this.server = new Server(
@@ -59,6 +61,7 @@ class TempoMCPServer {
       }
       this.tempoApi = new TempoApi({ apiToken });
       this.copyPlansService = new CopyPlansService(this.tempoApi);
+      this.getTempoDataService = new GetTempoDataService(this.tempoApi);
     }
   }
 
@@ -67,7 +70,7 @@ class TempoMCPServer {
       tools: [
         {
           name: 'get_tempo_data',
-          description: 'Fetches Tempo Planner plans and/or worklogs for specified teams and people within a date range. Returns CSV data for analysis.',
+          description: 'Fetches Tempo Planner plans and/or worklogs for specified teams and people within a date range. Returns structured JSON data with enriched fields (hours, teams). NOW IN TYPESCRIPT - faster and more reliable!',
           inputSchema: {
             type: 'object',
             properties: {
@@ -243,7 +246,7 @@ class TempoMCPServer {
       try {
         switch (toolName) {
           case 'get_tempo_data':
-            return await this.handleGetTempoData(request.params.arguments);
+            return await this.handleGetTempoDataTS(request.params.arguments);
           case 'get_jira_changelogs':
             return await this.handleGetJiraChangelogs(request.params.arguments);
           case 'get_worklog_summary':
@@ -273,7 +276,40 @@ class TempoMCPServer {
     });
   }
 
-  // NEW: TypeScript implementation
+  // NEW: TypeScript implementation for get_tempo_data
+  async handleGetTempoDataTS(args: unknown): Promise<{ content: Array<{ type: string; text: string }> }> {
+    this.initTempoApi();
+
+    const typedArgs = args as GetTempoDataArgs;
+
+    console.error('[get_tempo_data] Called with TypeScript implementation:', JSON.stringify({
+      from: typedArgs.from,
+      to: typedArgs.to,
+      team_ids: typedArgs.team_ids || [],
+      account_ids: typedArgs.account_ids || [],
+      data_type: typedArgs.data_type || 'Both',
+    }));
+
+    const result = await this.getTempoDataService!.execute(typedArgs);
+
+    // Format as JSON for better MCP integration
+    const jsonOutput = JSON.stringify(result, null, 2);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ **Tempo Data Retrieved** ✨ *TypeScript Implementation*\n\n**Period:** ${result.from} to ${result.to}\n**Accounts:** ${result.accounts.length}\n\n${
+            result.plans ? `**Plans:** ${result.plans.length} entries\n` : ''
+          }${
+            result.worklogs ? `**Worklogs:** ${result.worklogs.length} entries\n` : ''
+          }\n---\n\n<details><summary>JSON Data</summary>\n\n\`\`\`json\n${jsonOutput}\n\`\`\`\n</details>`
+        }
+      ]
+    };
+  }
+
+  // NEW: TypeScript implementation for copy_tempo_plans
   async handleCopyTempoPlansTS(args: unknown): Promise<{ content: Array<{ type: string; text: string }> }> {
     this.initTempoApi();
 

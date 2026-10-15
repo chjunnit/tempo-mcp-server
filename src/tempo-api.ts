@@ -63,6 +63,29 @@ export interface TempoHoliday {
   type?: string;
 }
 
+export interface TempoWorklog {
+  tempoWorklogId: number;
+  issue: {
+    id: number;
+    key: string;
+  };
+  timeSpentSeconds: number;
+  billableSeconds?: number;
+  startDate: string; // yyyy-MM-dd
+  startTime?: string; // HH:mm:ss
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+  author: {
+    accountId: string;
+    displayName?: string;
+  };
+  attributes?: {
+    key: string;
+    value: string;
+  }[];
+}
+
 export interface CreatePlanRequest {
   assigneeId: string;
   assigneeType: 'USER';
@@ -260,6 +283,21 @@ export class TempoApi {
     }
 
     return allHolidays;
+  }
+
+  /**
+   * Get worklogs for a user in a date range
+   */
+  async getWorklogs(accountId: string, from: string, to: string): Promise<TempoWorklog[]> {
+    const allWorklogs: TempoWorklog[] = [];
+
+    for await (const batch of this.paginate<TempoWorklog>(
+      `/worklogs/user/${accountId}?from=${from}&to=${to}`
+    )) {
+      allWorklogs.push(...batch);
+    }
+
+    return allWorklogs;
   }
 
   /**

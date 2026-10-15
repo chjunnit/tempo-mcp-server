@@ -56,6 +56,28 @@ export interface TempoHoliday {
     name?: string;
     type?: string;
 }
+export interface TempoWorklog {
+    tempoWorklogId: number;
+    issue: {
+        id: number;
+        key: string;
+    };
+    timeSpentSeconds: number;
+    billableSeconds?: number;
+    startDate: string;
+    startTime?: string;
+    description?: string;
+    createdAt: string;
+    updatedAt: string;
+    author: {
+        accountId: string;
+        displayName?: string;
+    };
+    attributes?: {
+        key: string;
+        value: string;
+    }[];
+}
 export interface CreatePlanRequest {
     assigneeId: string;
     assigneeType: 'USER';
@@ -95,6 +117,10 @@ export declare class TempoApi {
      * Get holidays for a user
      */
     getHolidays(accountId: string, from: string, to: string): Promise<TempoHoliday[]>;
+    /**
+     * Get worklogs for a user in a date range
+     */
+    getWorklogs(accountId: string, from: string, to: string): Promise<TempoWorklog[]>;
     /**
      * Create a new plan
      */
