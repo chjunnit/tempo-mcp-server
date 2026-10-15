@@ -2,6 +2,8 @@
 
 MCP server for burn-up tracking with Tempo and Jira. Fetches Tempo plans/worklogs and Jira changelog history.
 
+**✨ Now with TypeScript!** - `copy_tempo_plans` has been migrated to TypeScript for better reliability, type safety, and performance.
+
 ## Features
 
 ### 🎯 Four MCP Tools:
@@ -26,6 +28,13 @@ tempo-mcp-server/
 ```bash
 cd tempo-mcp-server
 npm install
+npm run build  # Compile TypeScript to JavaScript
+```
+
+**Development:**
+```bash
+npm run watch  # Auto-compile on file changes
+npm run dev    # Build and run
 ```
 
 ## Configuration
@@ -37,7 +46,7 @@ Add to Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`):
   "mcpServers": {
     "tempo-planner": {
       "command": "node",
-      "args": ["C:\\path\\to\\tempo-mcp-server\\index.js"],
+      "args": ["C:\\path\\to\\tempo-mcp-server\\dist\\index.js"],
       "env": {
         "TEMPO_API_TOKEN": "your-tempo-token",
         "JIRA_API_TOKEN": "your-jira-token",
@@ -124,11 +133,27 @@ Copies Tempo Planner allocations from one person to others with preview and conf
 
 ## Features
 
+✅ **TypeScript implementation** - `copy_tempo_plans` now in TypeScript (faster, type-safe, compile-time error checking)  
 ✅ **Bulk operations** - Efficient Jira bulk changelog endpoint  
 ✅ **Rate limiting** - Automatic retry with Retry-After  
 ✅ **Large responses** - Files >200KB written to `tempo-exports/`  
 ✅ **Error handling** - Clear error messages (not "invalid response")  
 ✅ **Incremental updates** - Use `since` parameter for changelog  
+
+### Why TypeScript?
+
+The `copy_tempo_plans` tool has been migrated from PowerShell to TypeScript:
+
+- 🚀 **Faster** - No process spawn overhead
+- 🛡️ **Type-safe** - Compile-time error checking prevents runtime bugs
+- 🔍 **Better errors** - Stack traces and clear error messages
+- 🧪 **Testable** - Unit tests possible with Vitest
+- 📝 **IntelliSense** - Full IDE support
+
+**Before (PowerShell):** `$week:` parsed as drive prefix → runtime error  
+**After (TypeScript):** TypeScript compiler catches syntax errors before deployment
+
+Other tools (`get_tempo_data`, `get_jira_changelogs`, `get_worklog_summary`) will be migrated in future releases.
 
 ## Troubleshooting
 
