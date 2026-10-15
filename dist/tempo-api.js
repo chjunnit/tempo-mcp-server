@@ -73,12 +73,51 @@ export class TempoApi {
         }
     }
     /**
+     * Get full plan details by ID
+     */
+    async getPlanDetails(planId, from, to) {
+        let url = `/plans/${planId}`;
+        if (from && to) {
+            url += `?from=${from}&to=${to}`;
+        }
+        return await this.request('GET', url);
+    }
+    /**
      * Get all plans for a user in a date range
+     * Fetches full plan details for each plan to get plannedSecondsPerDay
      */
     async getPlans(accountId, from, to) {
         const allPlans = [];
+        // First get plan summaries
+        const planSummaries = [];
         for await (const batch of this.paginate(`/plans/user/${accountId}?from=${from}&to=${to}`)) {
-            allPlans.push(...batch);
+            planSummaries.push(...batch);
+        }
+        // Then fetch full details for each plan to get plannedSecondsPerDay
+        for (const summary of planSummaries) {
+            try {
+                // Extract plan ID from metadata link if available
+                let planId = summary.id;
+                if (!planId && summary.plannedTime?.metadata?.all) {
+                    const match = summary.plannedTime.metadata.all.match(/\/plans\/(\d+)/);
+                    if (match) {
+                        planId = parseInt(match[1], 10);
+                    }
+                }
+                if (planId) {
+                    // Fetch full plan details with the date range to get correct seconds
+                    const fullPlan = await this.getPlanDetails(planId, summary.startDate, summary.endDate);
+                    allPlans.push(fullPlan);
+                }
+                else {
+                    console.error(`Warning: Could not extract plan ID for plan: ${JSON.stringify(summary)}`);
+                    allPlans.push(summary); // Fallback to summary
+                }
+            }
+            catch (error) {
+                console.error(`Warning: Could not fetch details for plan ${summary.id}: ${error instanceof Error ? error.message : String(error)}`);
+                allPlans.push(summary); // Fallback to summary
+            }
         }
         return allPlans;
     }

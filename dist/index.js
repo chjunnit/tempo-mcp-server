@@ -187,6 +187,11 @@ class TempoMCPServer {
                                 description: 'Optional: Only copy plans for these project IDs',
                                 items: { type: 'number' }
                             },
+                            project_mapping: {
+                                type: 'object',
+                                description: 'Optional: Map source project IDs to target project IDs. Example: {"10805": 10559} maps North Star to JOBS project',
+                                additionalProperties: { type: 'number' }
+                            },
                             conflict_mode: {
                                 type: 'string',
                                 description: 'How to handle existing allocations. Add: sum hours, Keep: skip if exists, Replace: overwrite. Default: Add',
@@ -281,7 +286,7 @@ class TempoMCPServer {
         if (isDryRun) {
             text += `📋 **Preview: Copy Tempo Plans** ✨ *TypeScript Implementation*\n\n`;
             text += `**Source:** ${result.source.accountId} (${result.source.from} to ${result.source.to})\n`;
-            text += `**Projects:** ${result.source.planCount} plan entries across ${result.source.dateCount} days\n\n`;
+            text += `**Source Plans:** ${result.source.planCount} plan periods\n\n`;
             text += `**Targets:** ${result.targets.length} people\n`;
             text += `**Mode:** ${result.conflictMode}\n\n`;
             if (result.totalConflicts > 0) {
@@ -318,18 +323,45 @@ class TempoMCPServer {
                 text += `\n`;
             }
             text += `\n*This is a preview. To actually write these plans, call again with \`dry_run: false\`*`;
+            // Add debug info if available
+            if (result.debug) {
+                text += `\n\n---\n### 🔍 Debug Info\n\n`;
+                text += `**Source Plans Found:** ${result.debug.sourcePlansRaw.length}\n`;
+                text += `**Clipped Plans Count:** ${result.debug.clippedPlansCount}\n\n`;
+                text += `**Source Plans Raw Data:**\n`;
+                for (const plan of result.debug.sourcePlansRaw) {
+                    text += `\n- **${plan.name}** (${plan.type} #${plan.id})\n`;
+                    text += `  - Period: ${plan.startDate} to ${plan.endDate}\n`;
+                    text += `  - plannedTime: \`${JSON.stringify(plan.plannedTime)}\`\n`;
+                    text += `  - includesNonWorkingDays: ${plan.includesNonWorkingDays}\n`;
+                }
+                text += `\n\n**Clipping Log:**\n\`\`\`\n${result.debug.clippingLog.join('\n')}\n\`\`\`\n`;
+            }
         }
         else {
-            text += `✅ **Successfully wrote Tempo plans** ✨ *TypeScript Implementation*\n\n`;
+            // Check if write was successful
+            const expectedEntries = result.totalEntries;
+            const actualWritten = result.writtenCount ?? 0;
+            const allSuccess = actualWritten === expectedEntries;
+            if (allSuccess) {
+                text += `✅ **Successfully wrote Tempo plans** ✨ *TypeScript Implementation*\n\n`;
+            }
+            else if (actualWritten > 0) {
+                text += `⚠️ **Partially wrote Tempo plans** (${actualWritten}/${expectedEntries} succeeded) ✨ *TypeScript Implementation*\n\n`;
+            }
+            else {
+                text += `❌ **Failed to write Tempo plans** (0/${expectedEntries} succeeded) ✨ *TypeScript Implementation*\n\n`;
+            }
             text += `**Source:** ${result.source.accountId} (${result.source.from} to ${result.source.to})\n`;
             text += `**Targets:** ${result.targets.length} people\n`;
-            text += `**Written:** ${result.writtenCount} plan entries\n`;
+            text += `**Written:** ${actualWritten}/${expectedEntries} plan entries\n`;
             text += `**Total hours:** ${result.totalHoursCopied}h\n\n`;
             if (result.warnings.length > 0) {
-                text += `### ⚠️ Warnings:\n`;
+                text += `### ⚠️ Errors and Warnings:\n`;
                 for (const warning of result.warnings) {
                     text += `- ${warning}\n`;
                 }
+                text += `\n`;
             }
         }
         // Include raw JSON for programmatic access

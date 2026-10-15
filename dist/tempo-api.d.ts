@@ -7,7 +7,7 @@ export interface TempoConfig {
     baseUrl?: string;
 }
 export interface TempoPlan {
-    id: number;
+    id?: number;
     assignee: {
         accountId: string;
         displayName?: string;
@@ -15,12 +15,29 @@ export interface TempoPlan {
     planItem: {
         id: number;
         name: string;
-        type: string;
+        type: 'PROJECT' | 'ISSUE';
     };
     startDate: string;
     endDate: string;
     plannedTime: {
-        plannedSeconds: number;
+        plannedSeconds?: number;
+        plannedSecondsPerDay?: number;
+        periods?: {
+            values?: Array<{
+                from: string;
+                to: string;
+                plannedSeconds: number;
+            }>;
+        };
+        days?: {
+            values?: Array<{
+                date: string;
+                plannedSeconds: number;
+            }>;
+        };
+        metadata?: {
+            all?: string;
+        };
     };
     includesNonWorkingDays?: boolean;
 }
@@ -40,16 +57,15 @@ export interface TempoHoliday {
     type?: string;
 }
 export interface CreatePlanRequest {
-    assignee: {
-        accountId: string;
-    };
-    planItem: {
-        id: number;
-    };
+    assigneeId: string;
+    assigneeType: 'USER';
+    planItemId: number | string;
+    planItemType: 'PROJECT' | 'ISSUE';
     startDate: string;
     endDate: string;
-    plannedSeconds: number;
-    includesNonWorkingDays?: boolean;
+    plannedSecondsPerDay: number;
+    includeNonWorkingDays: boolean;
+    rule: 'FIXED' | 'SPLIT_EVENLY' | 'NEVER';
 }
 export declare class TempoApiError extends Error {
     status?: number | undefined;
@@ -63,7 +79,12 @@ export declare class TempoApi {
     private request;
     private paginate;
     /**
+     * Get full plan details by ID
+     */
+    getPlanDetails(planId: number, from?: string, to?: string): Promise<TempoPlan>;
+    /**
      * Get all plans for a user in a date range
+     * Fetches full plan details for each plan to get plannedSecondsPerDay
      */
     getPlans(accountId: string, from: string, to: string): Promise<TempoPlan[]>;
     /**

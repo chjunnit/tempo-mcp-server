@@ -9,7 +9,7 @@ export interface TempoConfig {
 }
 
 export interface TempoPlan {
-  id: number;
+  id?: number;
   assignee: {
     accountId: string;
     displayName?: string;
@@ -17,12 +17,31 @@ export interface TempoPlan {
   planItem: {
     id: number;
     name: string;
-    type: string;
+    type: 'PROJECT' | 'ISSUE';
   };
   startDate: string; // yyyy-MM-dd
   endDate: string;
   plannedTime: {
-    plannedSeconds: number;
+    // Legacy flat structure (rarely used)
+    plannedSeconds?: number;
+    plannedSecondsPerDay?: number;
+    // Actual structure returned by API
+    periods?: {
+      values?: Array<{
+        from: string;
+        to: string;
+        plannedSeconds: number;
+      }>;
+    };
+    days?: {
+      values?: Array<{
+        date: string;
+        plannedSeconds: number;
+      }>;
+    };
+    metadata?: {
+      all?: string; // Link to full plan details
+    };
   };
   includesNonWorkingDays?: boolean;
 }
@@ -45,16 +64,15 @@ export interface TempoHoliday {
 }
 
 export interface CreatePlanRequest {
-  assignee: {
-    accountId: string;
-  };
-  planItem: {
-    id: number;
-  };
+  assigneeId: string;
+  assigneeType: 'USER';
+  planItemId: number | string; // number for PROJECT, string for ISSUE
+  planItemType: 'PROJECT' | 'ISSUE';
   startDate: string;
   endDate: string;
-  plannedSeconds: number;
-  includesNonWorkingDays?: boolean;
+  plannedSecondsPerDay: number;
+  includeNonWorkingDays: boolean;
+  rule: 'FIXED' | 'SPLIT_EVENLY' | 'NEVER';
 }
 
 export class TempoApiError extends Error {
@@ -155,15 +173,55 @@ export class TempoApi {
   }
 
   /**
+   * Get full plan details by ID
+   */
+  async getPlanDetails(planId: number, from?: string, to?: string): Promise<TempoPlan> {
+    let url = `/plans/${planId}`;
+    if (from && to) {
+      url += `?from=${from}&to=${to}`;
+    }
+    return await this.request<TempoPlan>('GET', url);
+  }
+
+  /**
    * Get all plans for a user in a date range
+   * Fetches full plan details for each plan to get plannedSecondsPerDay
    */
   async getPlans(accountId: string, from: string, to: string): Promise<TempoPlan[]> {
     const allPlans: TempoPlan[] = [];
 
+    // First get plan summaries
+    const planSummaries: TempoPlan[] = [];
     for await (const batch of this.paginate<TempoPlan>(
       `/plans/user/${accountId}?from=${from}&to=${to}`
     )) {
-      allPlans.push(...batch);
+      planSummaries.push(...batch);
+    }
+
+    // Then fetch full details for each plan to get plannedSecondsPerDay
+    for (const summary of planSummaries) {
+      try {
+        // Extract plan ID from metadata link if available
+        let planId = summary.id;
+        if (!planId && (summary.plannedTime as any)?.metadata?.all) {
+          const match = ((summary.plannedTime as any).metadata.all as string).match(/\/plans\/(\d+)/);
+          if (match) {
+            planId = parseInt(match[1], 10);
+          }
+        }
+
+        if (planId) {
+          // Fetch full plan details with the date range to get correct seconds
+          const fullPlan = await this.getPlanDetails(planId, summary.startDate, summary.endDate);
+          allPlans.push(fullPlan);
+        } else {
+          console.error(`Warning: Could not extract plan ID for plan: ${JSON.stringify(summary)}`);
+          allPlans.push(summary); // Fallback to summary
+        }
+      } catch (error) {
+        console.error(`Warning: Could not fetch details for plan ${summary.id}: ${error instanceof Error ? error.message : String(error)}`);
+        allPlans.push(summary); // Fallback to summary
+      }
     }
 
     return allPlans;

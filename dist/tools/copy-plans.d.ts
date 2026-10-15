@@ -1,5 +1,6 @@
 /**
  * Copy Tempo Planner allocations from one person to others
+ * Copies plans as PERIODS (not individual days), preserving includesNonWorkingDays
  */
 import { TempoApi } from '../tempo-api.js';
 export interface CopyPlansArgs {
@@ -9,20 +10,23 @@ export interface CopyPlansArgs {
     from: string;
     to: string;
     project_ids?: number[];
+    project_mapping?: Record<number, number>;
     conflict_mode?: 'Add' | 'Keep' | 'Replace';
     skip_holidays?: boolean;
     max_weekly_hours?: number;
     dry_run?: boolean;
 }
 export interface PlanEntry {
-    date: string;
+    startDate: string;
+    endDate: string;
     projectId: number;
     projectName: string;
+    projectType: 'PROJECT' | 'ISSUE';
     hours: number;
+    secondsPerDay: number;
+    includesNonWorkingDays: boolean;
     action: 'add' | 'replace' | 'skip';
-    existingHours: number;
-    newTotalHours: number;
-    plannedSeconds: number;
+    conflictInfo?: string;
 }
 export interface TargetResult {
     accountId: string;
@@ -39,7 +43,6 @@ export interface CopyPlansResult {
         from: string;
         to: string;
         planCount: number;
-        dateCount: number;
     };
     targets: TargetResult[];
     totalHoursCopied: number;
@@ -49,15 +52,26 @@ export interface CopyPlansResult {
     warnings: string[];
     conflictMode: string;
     writtenCount?: number;
+    debug?: {
+        sourcePlansRaw: any[];
+        clippingLog: string[];
+        clippedPlansCount: number;
+    };
 }
 export declare class CopyPlansService {
     private tempoApi;
     constructor(tempoApi: TempoApi);
     execute(args: CopyPlansArgs): Promise<CopyPlansResult>;
     private resolveTargets;
-    private groupPlansByDate;
+    /**
+     * Clip plans to the window [from, to] and calculate seconds for the clipped period
+     * Preserves includesNonWorkingDays flag from source
+     * Applies project mapping if specified
+     */
+    private clipPlansToWindow;
+    private countDays;
     private processTarget;
-    private calculateWeeklyTotals;
+    private countWeeks;
     private writePlans;
 }
 //# sourceMappingURL=copy-plans.d.ts.map
