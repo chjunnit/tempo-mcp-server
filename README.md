@@ -1,8 +1,8 @@
 # Tempo MCP Server
 
-MCP server for burn-up tracking with Tempo and Jira. Fetches Tempo plans/worklogs and Jira changelog history.
+TypeScript MCP server for burn-up tracking with Tempo and Jira. Fetches Tempo plans/worklogs and Jira changelog history.
 
-**✨ Now with TypeScript!** - `copy_tempo_plans` has been migrated to TypeScript for better reliability, type safety, and performance.
+**✨ Full TypeScript Migration Complete!** - All tools migrated from PowerShell to TypeScript for better reliability, type safety, and performance.
 
 ## Features
 
@@ -15,11 +15,18 @@ MCP server for burn-up tracking with Tempo and Jira. Fetches Tempo plans/worklog
 ### 📁 Repository Structure
 ```
 tempo-mcp-server/
-├── index.js                  # MCP server (Node.js)
-├── scripts/
-│   ├── Get-TempoData.ps1    # Tempo API wrapper
-│   └── Get-JiraData.ps1     # Jira changelog & worklog aggregation
+├── src/
+│   ├── index.ts                          # MCP server entry point
+│   ├── tempo-api.ts                      # Tempo REST API client
+│   ├── jira-api.ts                       # Jira REST API client
+│   └── tools/
+│       ├── copy-plans.ts                 # Copy Tempo plans service
+│       ├── get-tempo-data.ts             # Tempo data fetching service
+│       ├── get-jira-changelogs.ts        # Jira changelog service
+│       └── get-worklog-summary.ts        # Worklog aggregation service
+├── dist/                                  # Compiled JavaScript
 ├── package.json
+├── tsconfig.json
 └── README.md
 ```
 
@@ -63,7 +70,7 @@ Add to Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`):
 ## Tools
 
 ### 1. get_tempo_data
-Fetches Tempo plans and/or worklogs.
+Fetches Tempo plans and/or worklogs with enriched data.
 
 **Parameters:**
 - `from`, `to` (required): yyyy-MM-dd dates
@@ -71,11 +78,15 @@ Fetches Tempo plans and/or worklogs.
 - `account_ids`: Array of Atlassian account IDs
 - `data_type`: "Plans", "Worklogs", or "Both"
 
+**Returns:** Structured JSON with enriched fields:
+- Plans: `plannedHoursPerDay`, `totalPlannedHours`, `teams`
+- Worklogs: `hours`, `billableHours`, `teams`
+
 **Example:**
 > "Get Tempo data from 2026-10-01 to 2026-12-31 for team 3"
 
 ### 2. get_jira_changelogs
-Fetches field change history for burn-up tracking.
+Fetches field change history for burn-up tracking using bulk changelog endpoint.
 
 **Parameters:**
 - `jql` OR `issue_keys`: JQL query or specific issue keys
@@ -83,22 +94,26 @@ Fetches field change history for burn-up tracking.
 - `since`: Optional date filter (yyyy-MM-dd)
 - `include_current`: Include current values (default: true)
 
-**Returns:** Two CSV blocks:
-- `changes`: issueKey, changedAt, field, from, to
-- `current`: issueKey, issueType, status, storyPoints, fixVersions, parentKey, etc.
+**Returns:** Structured JSON with:
+- `changes`: Array of changelog entries (issueKey, changedAt, field, from, to)
+- `currentValues`: Enriched issue data (storyPoints, statusName, fixVersionNames, parentKey)
+- `metadata`: Issue count, change count, tracked fields
 
 **Example:**
 > "Get changelog for parent = JOBS-20161 since 2026-10-01"
 
 ### 3. get_worklog_summary
-Aggregates Tempo worklogs by ISO week and epic.
+Aggregates Tempo worklogs by ISO week and epic with control sum.
 
 **Parameters:**
 - `jql` (required): JQL query for issues
 - `from`, `to` (required): yyyy-MM-dd dates
-- `group_by`: Dimensions (default: ["week", "epic"])
+- `group_by`: Dimensions (default: ["week", "epic"]) - supports: week, epic, issue, author
 
-**Returns:** CSV with weekly summaries + control sum
+**Returns:** Structured JSON with:
+- `summary`: Array of aggregated entries with ISO week, epic, hours, worklog count
+- `controlSum`: Total hours and count for verification
+- `metadata`: Issue count, worklog count, grouping dimensions
 
 **Example:**
 > "Get worklog summary for parent = JOBS-20161 from Aug to Oct 2026"
@@ -133,27 +148,46 @@ Copies Tempo Planner allocations from one person to others with preview and conf
 
 ## Features
 
-✅ **TypeScript implementation** - `copy_tempo_plans` now in TypeScript (faster, type-safe, compile-time error checking)  
+✅ **Full TypeScript implementation** - All tools now in TypeScript (faster, type-safe, compile-time error checking)  
+✅ **Structured JSON output** - Better integration with MCP and easier data processing  
+✅ **Enriched data** - Computed fields (hours, teams, ISO weeks) included automatically  
 ✅ **Bulk operations** - Efficient Jira bulk changelog endpoint  
+✅ **Modern API endpoints** - Fixed deprecated endpoints (HTTP 410) → uses /rest/api/3/search/jql  
 ✅ **Rate limiting** - Automatic retry with Retry-After  
-✅ **Large responses** - Files >200KB written to `tempo-exports/`  
-✅ **Error handling** - Clear error messages (not "invalid response")  
+✅ **Error handling** - Clear error messages with proper stack traces  
 ✅ **Incremental updates** - Use `since` parameter for changelog  
 
-### Why TypeScript?
+## Why TypeScript?
 
-The `copy_tempo_plans` tool has been migrated from PowerShell to TypeScript:
+All tools have been migrated from PowerShell to TypeScript:
 
-- 🚀 **Faster** - No process spawn overhead
+- 🚀 **Faster** - No process spawn overhead, direct API calls
 - 🛡️ **Type-safe** - Compile-time error checking prevents runtime bugs
 - 🔍 **Better errors** - Stack traces and clear error messages
 - 🧪 **Testable** - Unit tests possible with Vitest
-- 📝 **IntelliSense** - Full IDE support
+- 📝 **IntelliSense** - Full IDE support with autocomplete
+- 🔧 **Modern APIs** - Uses latest Jira/Tempo endpoints
 
-**Before (PowerShell):** `$week:` parsed as drive prefix → runtime error  
-**After (TypeScript):** TypeScript compiler catches syntax errors before deployment
+**Before (PowerShell):** Runtime errors, CSV parsing, deprecated endpoints  
+**After (TypeScript):** Compile-time safety, structured JSON, modern APIs
 
-Other tools (`get_tempo_data`, `get_jira_changelogs`, `get_worklog_summary`) will be migrated in future releases.
+## TypeScript Architecture
+
+### API Clients
+- **TempoApi** (`src/tempo-api.ts`) - Plans, worklogs, teams, holidays
+- **JiraApi** (`src/jira-api.ts`) - JQL search, bulk changelog, issue data
+
+### Service Layer
+- **GetTempoDataService** - Fetches and enriches Tempo data
+- **GetJiraChangelogsService** - Fetches changelog history with field mapping
+- **GetWorklogSummaryService** - Aggregates worklogs with ISO week calculation
+- **CopyPlansService** - Plan copying with conflict handling
+
+### Key Features
+- Async/await patterns with proper error handling
+- Pagination support (nextPageToken for Jira, metadata.next for Tempo)
+- Type-safe interfaces for all API responses
+- Computed fields enrichment (hours, teams, ISO weeks)
 
 ## Troubleshooting
 
@@ -161,7 +195,7 @@ Other tools (`get_tempo_data`, `get_jira_changelogs`, `get_worklog_summary`) wil
 
 **"JIRA_API_TOKEN not set"** → Add Jira credentials to config
 
-**Scripts fail to run** → Check PowerShell execution policy: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+**HTTP 410 error** → Fixed in v3.0.0 (migrated to /rest/api/3/search/jql)
 
 **No changelog changes returned** → Field mapping is automatic (customfield_10008 → Story Points, etc.)
 
@@ -178,12 +212,25 @@ Other tools (`get_tempo_data`, `get_jira_changelogs`, `get_worklog_summary`) wil
 ## Development
 
 ```bash
-# Test PowerShell scripts directly
-.\scripts\Get-TempoData.ps1 -From 2026-10-01 -To 2026-10-31 -TeamIds 3 -Data Both -PassThru
+# Build TypeScript
+npm run build
 
-.\scripts\Get-JiraData.ps1 -Action GetChangelogs -IssueKeys JOBS-22480
+# Watch mode (auto-compile on changes)
+npm run watch
 
-.\scripts\Get-JiraData.ps1 -Action GetWorklogSummary -JQL "parent = JOBS-20161" -From 2026-08-01 -To 2026-10-11
+# Run server
+npm start
 
-.\scripts\Copy-TempoPlans.ps1 -Action Preview -SourceAccountId "AXLD" -TargetAccountIds "ABCD,WXYZ" -From 2027-01-01 -To 2027-03-31 -ConflictMode Add
+# Build and run
+npm run dev
 ```
+
+## Migration History
+
+- **v1.0.0** - Initial PowerShell implementation
+- **v2.0.0** - TypeScript migration Phase 1-2 (setup, copy_tempo_plans)
+- **v3.0.0** - Complete TypeScript migration:
+  - Phase 3: get_tempo_data
+  - Phase 4: get_jira_changelogs (fixed HTTP 410)
+  - Phase 5: get_worklog_summary
+  - Phase 6: Cleanup (removed PowerShell scripts)

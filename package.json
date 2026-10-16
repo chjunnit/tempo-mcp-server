@@ -1,7 +1,7 @@
 {
   "name": "tempo-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server for fetching Tempo Planner data",
+  "version": "3.0.0",
+  "description": "TypeScript MCP server for Tempo Planner and Jira data - plans, worklogs, changelogs, and burn-up tracking",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
