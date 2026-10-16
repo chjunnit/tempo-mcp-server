@@ -88,17 +88,34 @@ export class GetTempoDataService {
                         const dayDate = new Date(d.date + 'T00:00:00Z');
                         return dayDate >= fromDate && dayDate <= toDate;
                     });
+                    // Calculate total seconds from filtered days
+                    const totalSecondsInPeriod = filteredDays.reduce((sum, d) => sum + d.plannedSeconds, 0);
+                    // Filter periods to requested period only
+                    const periods = plan.plannedTime.periods?.values ?? [];
+                    const filteredPeriods = periods.filter(p => {
+                        const periodFrom = new Date(p.from + 'T00:00:00Z');
+                        const periodTo = new Date(p.to + 'T00:00:00Z');
+                        // Include period if it overlaps with requested range
+                        return periodFrom <= toDate && periodTo >= fromDate;
+                    });
                     // Enrich with computed fields
                     const enriched = {
                         ...plan,
                         teams: teamMap.get(accountId) || [],
-                        // Replace days with filtered version
+                        // Replace days and periods with filtered versions
                         plannedTime: {
                             ...plan.plannedTime,
                             days: plan.plannedTime.days ? {
-                                ...plan.plannedTime.days,
+                                count: filteredDays.length,
                                 values: filteredDays,
                             } : undefined,
+                            periods: plan.plannedTime.periods && filteredPeriods.length > 0 ? {
+                                count: filteredPeriods.length,
+                                values: filteredPeriods,
+                            } : undefined,
+                            // Update totals to match filtered data
+                            totalPlannedSeconds: totalSecondsInPeriod,
+                            totalPlannedSecondsInScope: totalSecondsInPeriod,
                         },
                     };
                     // Extract plannedSecondsPerDay from filtered work days
@@ -107,8 +124,7 @@ export class GetTempoDataService {
                         const secondsPerDay = Math.max(...workDays.map(d => d.plannedSeconds));
                         enriched.plannedHoursPerDay = Math.round((secondsPerDay / 3600) * 100) / 100;
                         // Calculate total hours from filtered work days
-                        const totalSeconds = workDays.reduce((sum, d) => sum + d.plannedSeconds, 0);
-                        enriched.totalPlannedHours = Math.round((totalSeconds / 3600) * 100) / 100;
+                        enriched.totalPlannedHours = Math.round((totalSecondsInPeriod / 3600) * 100) / 100;
                     }
                     else if (plan.plannedTime.plannedSeconds) {
                         // Fallback to plannedSeconds if available

@@ -23,6 +23,7 @@ export interface TempoPlan {
         plannedSeconds?: number;
         plannedSecondsPerDay?: number;
         periods?: {
+            count?: number;
             values?: Array<{
                 from: string;
                 to: string;
@@ -30,11 +31,14 @@ export interface TempoPlan {
             }>;
         };
         days?: {
+            count?: number;
             values?: Array<{
                 date: string;
                 plannedSeconds: number;
             }>;
         };
+        totalPlannedSeconds?: number;
+        totalPlannedSecondsInScope?: number;
         metadata?: {
             all?: string;
         };
