@@ -23,7 +23,8 @@ export class GetWorklogSummaryService {
             issueIds.push(issueId);
             issueIdToKey.set(issueId, issue.key);
             // Get epic key from parent (or self if no parent)
-            const epicKey = issue.fields.parent?.key || issue.key;
+            // Epic issues themselves don't have a parent, so use their own key
+            const epicKey = issue.fields?.parent?.key || issue.key;
             issueToEpic.set(issueId, epicKey);
         }
         console.error(`    Found ${issueIds.length} issues`);

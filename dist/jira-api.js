@@ -110,34 +110,43 @@ export class JiraApi {
         const batchSize = 1000;
         for (let i = 0; i < issueKeysOrIds.length; i += batchSize) {
             const batch = issueKeysOrIds.slice(i, i + batchSize);
-            const result = await this.request('POST', '/rest/api/3/changelog/bulkfetch', {
-                issueIdsOrKeys: batch,
-            });
-            // Parse changelogs
-            for (const issueLog of result.issueChangeLogs) {
-                const issueKey = issueIdToKey.get(issueLog.issueId) || issueLog.issueId;
-                for (const history of issueLog.changeHistories) {
-                    for (const change of history.items) {
-                        // Filter by field
-                        if (changelogFields.has(change.field) || (change.fieldId && changelogFields.has(change.fieldId))) {
-                            const changedAt = new Date(history.created).toISOString();
-                            // Filter by since date
-                            if (since && changedAt < since) {
-                                continue;
+            // Paginate through changelog results
+            let nextPageToken = undefined;
+            do {
+                const body = {
+                    issueIdsOrKeys: batch,
+                };
+                if (nextPageToken) {
+                    body.nextPageToken = nextPageToken;
+                }
+                const result = await this.request('POST', '/rest/api/3/changelog/bulkfetch', body);
+                // Parse changelogs
+                for (const issueLog of result.issueChangeLogs) {
+                    const issueKey = issueIdToKey.get(issueLog.issueId) || issueLog.issueId;
+                    for (const history of issueLog.changeHistories) {
+                        for (const change of history.items) {
+                            // Filter by field
+                            if (changelogFields.has(change.field) || (change.fieldId && changelogFields.has(change.fieldId))) {
+                                const changedAt = new Date(history.created).toISOString();
+                                // Filter by since date
+                                if (since && changedAt < since) {
+                                    continue;
+                                }
+                                allChanges.push({
+                                    issueKey,
+                                    changedAt,
+                                    field: change.field,
+                                    fieldId: change.fieldId,
+                                    from: change.fromString || '',
+                                    to: change.toString || '',
+                                    author: history.author?.displayName,
+                                });
                             }
-                            allChanges.push({
-                                issueKey,
-                                changedAt,
-                                field: change.field,
-                                fieldId: change.fieldId,
-                                from: change.fromString || '',
-                                to: change.toString || '',
-                                author: history.author?.displayName,
-                            });
                         }
                     }
                 }
-            }
+                nextPageToken = result.nextPageToken;
+            } while (nextPageToken);
         }
         return allChanges;
     }
