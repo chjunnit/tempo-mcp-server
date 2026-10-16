@@ -122,6 +122,10 @@ export declare class TempoApi {
      */
     getWorklogs(accountId: string, from: string, to: string): Promise<TempoWorklog[]>;
     /**
+     * Search worklogs by issue IDs and date range
+     */
+    searchWorklogs(issueIds: number[], from: string, to: string): Promise<TempoWorklog[]>;
+    /**
      * Create a new plan
      */
     createPlan(plan: CreatePlanRequest): Promise<TempoPlan>;

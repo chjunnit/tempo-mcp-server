@@ -13,6 +13,9 @@ import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { TempoApi } from './tempo-api.js';
 import { CopyPlansService, CopyPlansArgs, CopyPlansResult } from './tools/copy-plans.js';
 import { GetTempoDataService, GetTempoDataArgs, TempoDataResult } from './tools/get-tempo-data.js';
+import { JiraApi } from './jira-api.js';
+import { GetJiraChangelogsService, GetJiraChangelogsArgs, ChangelogsResult } from './tools/get-jira-changelogs.js';
+import { GetWorklogSummaryService, GetWorklogSummaryArgs, WorklogSummaryResult } from './tools/get-worklog-summary.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,6 +33,9 @@ class TempoMCPServer {
   private tempoApi: TempoApi | null = null;
   private copyPlansService: CopyPlansService | null = null;
   private getTempoDataService: GetTempoDataService | null = null;
+  private jiraApi: JiraApi | null = null;
+  private getJiraChangelogsService: GetJiraChangelogsService | null = null;
+  private getWorklogSummaryService: GetWorklogSummaryService | null = null;
 
   constructor() {
     this.server = new Server(
@@ -62,6 +68,33 @@ class TempoMCPServer {
       this.tempoApi = new TempoApi({ apiToken });
       this.copyPlansService = new CopyPlansService(this.tempoApi);
       this.getTempoDataService = new GetTempoDataService(this.tempoApi);
+    }
+  }
+
+  private initJiraApi(): void {
+    if (!this.jiraApi) {
+      const apiToken = process.env.JIRA_API_TOKEN;
+      const email = process.env.JIRA_EMAIL;
+      const baseUrl = process.env.JIRA_BASE_URL;
+
+      if (!apiToken || !email) {
+        throw new Error('JIRA_API_TOKEN and JIRA_EMAIL environment variables must be set');
+      }
+
+      this.jiraApi = new JiraApi({ email, apiToken, baseUrl });
+      this.getJiraChangelogsService = new GetJiraChangelogsService(this.jiraApi);
+    }
+  }
+
+  private initWorklogSummaryService(): void {
+    this.initJiraApi();
+    this.initTempoApi();
+
+    if (!this.getWorklogSummaryService) {
+      this.getWorklogSummaryService = new GetWorklogSummaryService(
+        this.jiraApi!,
+        this.tempoApi!
+      );
     }
   }
 
@@ -108,7 +141,7 @@ class TempoMCPServer {
         },
         {
           name: 'get_jira_changelogs',
-          description: 'Fetches field change history for Jira issues using bulk changelog endpoint. Returns CSV with change history and current values for burn-up tracking.',
+          description: 'Fetches field change history for Jira issues using bulk changelog endpoint. Returns structured JSON with change history and current values for burn-up tracking. NOW IN TYPESCRIPT - faster and more reliable!',
           inputSchema: {
             type: 'object',
             properties: {
@@ -142,7 +175,7 @@ class TempoMCPServer {
         },
         {
           name: 'get_worklog_summary',
-          description: 'Aggregates Tempo worklogs by ISO week and epic for burn-up tracking. Returns CSV with weekly hour summaries and control sum.',
+          description: 'Aggregates Tempo worklogs by ISO week and epic for burn-up tracking. Returns structured JSON with weekly hour summaries and control sum. NOW IN TYPESCRIPT - faster and more reliable!',
           inputSchema: {
             type: 'object',
             properties: {
@@ -248,9 +281,9 @@ class TempoMCPServer {
           case 'get_tempo_data':
             return await this.handleGetTempoDataTS(request.params.arguments);
           case 'get_jira_changelogs':
-            return await this.handleGetJiraChangelogs(request.params.arguments);
+            return await this.handleGetJiraChangelogsTS(request.params.arguments);
           case 'get_worklog_summary':
-            return await this.handleGetWorklogSummary(request.params.arguments);
+            return await this.handleGetWorklogSummaryTS(request.params.arguments);
           case 'copy_tempo_plans':
             return await this.handleCopyTempoPlansTS(request.params.arguments);
           default:
@@ -304,6 +337,67 @@ class TempoMCPServer {
           }${
             result.worklogs ? `**Worklogs:** ${result.worklogs.length} entries\n` : ''
           }\n---\n\n<details><summary>JSON Data</summary>\n\n\`\`\`json\n${jsonOutput}\n\`\`\`\n</details>`
+        }
+      ]
+    };
+  }
+
+  // NEW: TypeScript implementation for get_jira_changelogs
+  async handleGetJiraChangelogsTS(args: unknown): Promise<{ content: Array<{ type: string; text: string }> }> {
+    this.initJiraApi();
+
+    const typedArgs = args as GetJiraChangelogsArgs;
+
+    console.error('[get_jira_changelogs] Called with TypeScript implementation:', JSON.stringify({
+      jql: typedArgs.jql,
+      issue_keys: typedArgs.issue_keys,
+      fields: typedArgs.fields || ['customfield_10008', 'status', 'resolution', 'fixVersions', 'parent'],
+      since: typedArgs.since,
+      include_current: typedArgs.include_current ?? true,
+    }));
+
+    const result = await this.getJiraChangelogsService!.execute(typedArgs);
+
+    // Format as JSON for better MCP integration
+    const jsonOutput = JSON.stringify(result, null, 2);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ **Jira Changelogs Retrieved** ✨ *TypeScript Implementation*\n\n**Issues:** ${result.metadata.issueCount}\n**Changes:** ${result.metadata.changeCount}\n**Fields:** ${result.metadata.fields.join(', ')}\n${
+            result.metadata.since ? `**Since:** ${result.metadata.since}\n` : ''
+          }${
+            result.currentValues ? `**Current Values:** ${result.currentValues.length} issues\n` : ''
+          }\n---\n\n<details><summary>JSON Data</summary>\n\n\`\`\`json\n${jsonOutput}\n\`\`\`\n</details>`
+        }
+      ]
+    };
+  }
+
+  // NEW: TypeScript implementation for get_worklog_summary
+  async handleGetWorklogSummaryTS(args: unknown): Promise<{ content: Array<{ type: string; text: string }> }> {
+    this.initWorklogSummaryService();
+
+    const typedArgs = args as GetWorklogSummaryArgs;
+
+    console.error('[get_worklog_summary] Called with TypeScript implementation:', JSON.stringify({
+      jql: '(jql provided)',
+      from: typedArgs.from,
+      to: typedArgs.to,
+      group_by: typedArgs.group_by || ['week', 'epic'],
+    }));
+
+    const result = await this.getWorklogSummaryService!.execute(typedArgs);
+
+    // Format as JSON for better MCP integration
+    const jsonOutput = JSON.stringify(result, null, 2);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `✅ **Worklog Summary Retrieved** ✨ *TypeScript Implementation*\n\n**Period:** ${result.metadata.from} to ${result.metadata.to}\n**Issues:** ${result.metadata.issueCount}\n**Worklogs:** ${result.metadata.worklogCount}\n**Group by:** ${result.metadata.groupBy.join(', ')}\n\n**Summary entries:** ${result.summary.length}\n**Total hours:** ${result.controlSum.totalHours}\n**Total worklogs:** ${result.controlSum.totalCount}\n\n---\n\n<details><summary>JSON Data</summary>\n\n\`\`\`json\n${jsonOutput}\n\`\`\`\n</details>`
         }
       ]
     };

@@ -158,6 +158,40 @@ export class TempoApi {
         return allWorklogs;
     }
     /**
+     * Search worklogs by issue IDs and date range
+     */
+    async searchWorklogs(issueIds, from, to) {
+        const allWorklogs = [];
+        const batchSize = 1000;
+        // Process in batches
+        for (let i = 0; i < issueIds.length; i += batchSize) {
+            const batch = issueIds.slice(i, i + batchSize);
+            let nextUrl = `${this.baseUrl}/worklogs/search?limit=5000`;
+            const body = {
+                from,
+                to,
+                issueIds: batch,
+            };
+            while (nextUrl) {
+                const response = await fetch(nextUrl, {
+                    method: 'POST',
+                    headers: this.headers,
+                    body: JSON.stringify(body),
+                });
+                await new Promise(resolve => setTimeout(resolve, 200));
+                if (!response.ok) {
+                    throw new TempoApiError(`HTTP ${response.status}`, response.status);
+                }
+                const data = await response.json();
+                if (data.results && data.results.length > 0) {
+                    allWorklogs.push(...data.results);
+                }
+                nextUrl = data.metadata?.next || null;
+            }
+        }
+        return allWorklogs;
+    }
+    /**
      * Create a new plan
      */
     async createPlan(plan) {
