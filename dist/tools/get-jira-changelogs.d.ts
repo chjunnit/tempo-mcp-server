@@ -1,7 +1,7 @@
 /**
  * Get Jira changelog history for burn-up tracking
  */
-import { JiraApi, JiraChange, JiraIssue } from '../jira-api.js';
+import { JiraApi, JiraChange } from '../jira-api.js';
 export interface GetJiraChangelogsArgs {
     jql?: string;
     issue_keys?: string[];
@@ -19,10 +19,15 @@ export interface ChangelogsResult {
         since?: string;
     };
 }
-export interface EnrichedIssue extends JiraIssue {
-    storyPoints?: number | null;
+export interface EnrichedIssue {
+    key: string;
+    issueType?: string;
+    created?: string;
     statusName?: string;
+    statusCategory?: string;
     resolutionName?: string | null;
+    resolutionDate?: string | null;
+    storyPoints?: number | null;
     fixVersionNames?: string[];
     parentKey?: string | null;
 }
@@ -32,7 +37,7 @@ export declare class GetJiraChangelogsService {
     constructor(jiraApi: JiraApi);
     execute(args: GetJiraChangelogsArgs): Promise<ChangelogsResult>;
     /**
-     * Enrich issue with computed fields for easier consumption
+     * Enrich issue with flat fields only (no nested objects)
      */
     private enrichIssue;
 }

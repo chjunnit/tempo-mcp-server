@@ -23,11 +23,16 @@ export interface ChangelogsResult {
   };
 }
 
-export interface EnrichedIssue extends JiraIssue {
-  // Add computed fields for easier consumption
-  storyPoints?: number | null;
+export interface EnrichedIssue {
+  // Flat fields only (no nested objects)
+  key: string;
+  issueType?: string;
+  created?: string;
   statusName?: string;
+  statusCategory?: string;
   resolutionName?: string | null;
+  resolutionDate?: string | null;
+  storyPoints?: number | null;
   fixVersionNames?: string[];
   parentKey?: string | null;
 }
@@ -107,14 +112,18 @@ export class GetJiraChangelogsService {
   }
 
   /**
-   * Enrich issue with computed fields for easier consumption
+   * Enrich issue with flat fields only (no nested objects)
    */
   private enrichIssue(issue: JiraIssue): EnrichedIssue {
     return {
-      ...issue,
-      storyPoints: issue.fields.customfield_10008 || null,
+      key: issue.key,
+      issueType: issue.fields.issuetype?.name,
+      created: issue.fields.created,
       statusName: issue.fields.status?.name,
+      statusCategory: issue.fields.status?.statusCategory?.name,
       resolutionName: issue.fields.resolution?.name || null,
+      resolutionDate: issue.fields.resolutiondate || null,
+      storyPoints: issue.fields.customfield_10008 || null,
       fixVersionNames: issue.fields.fixVersions?.map(v => v.name) || [],
       parentKey: issue.fields.parent?.key || null,
     };

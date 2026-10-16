@@ -15,6 +15,9 @@ export interface JiraIssue {
         };
         status?: {
             name: string;
+            statusCategory?: {
+                name: string;
+            };
         };
         resolution?: {
             name: string;

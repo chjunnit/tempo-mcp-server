@@ -141,27 +141,43 @@ export class GetTempoDataService {
   ): Promise<EnrichedPlan[]> {
     console.error('  Fetching plans...');
     const allPlans: EnrichedPlan[] = [];
+    const fromDate = new Date(from + 'T00:00:00Z');
+    const toDate = new Date(to + 'T00:00:00Z');
 
     for (const accountId of accountIds) {
       try {
         const plans = await this.tempoApi.getPlans(accountId, from, to);
 
         for (const plan of plans) {
+          // Filter days to requested period only
+          const days = plan.plannedTime.days?.values ?? [];
+          const filteredDays = days.filter(d => {
+            const dayDate = new Date(d.date + 'T00:00:00Z');
+            return dayDate >= fromDate && dayDate <= toDate;
+          });
+
           // Enrich with computed fields
           const enriched: EnrichedPlan = {
             ...plan,
             teams: teamMap.get(accountId) || [],
+            // Replace days with filtered version
+            plannedTime: {
+              ...plan.plannedTime,
+              days: plan.plannedTime.days ? {
+                ...plan.plannedTime.days,
+                values: filteredDays,
+              } : undefined,
+            },
           };
 
-          // Extract plannedSecondsPerDay from days.values if available
-          const days = plan.plannedTime.days?.values ?? [];
-          const workDays = days.filter(d => d.plannedSeconds > 0);
+          // Extract plannedSecondsPerDay from filtered work days
+          const workDays = filteredDays.filter(d => d.plannedSeconds > 0);
 
           if (workDays.length > 0) {
             const secondsPerDay = Math.max(...workDays.map(d => d.plannedSeconds));
             enriched.plannedHoursPerDay = Math.round((secondsPerDay / 3600) * 100) / 100;
 
-            // Calculate total hours from all work days
+            // Calculate total hours from filtered work days
             const totalSeconds = workDays.reduce((sum, d) => sum + d.plannedSeconds, 0);
             enriched.totalPlannedHours = Math.round((totalSeconds / 3600) * 100) / 100;
           } else if (plan.plannedTime.plannedSeconds) {

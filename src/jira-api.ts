@@ -13,7 +13,7 @@ export interface JiraIssue {
   key: string;
   fields: {
     issuetype?: { name: string };
-    status?: { name: string };
+    status?: { name: string; statusCategory?: { name: string } };
     resolution?: { name: string } | null;
     resolutiondate?: string | null;
     created?: string;
